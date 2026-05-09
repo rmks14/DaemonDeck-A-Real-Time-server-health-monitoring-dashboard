@@ -12,6 +12,7 @@ type User = {
   name: string;
   username: string;
   email: string;
+  role: "viewer" | "operator" | "admin";
 };
 
 type AuthResponse = {
@@ -160,6 +161,10 @@ function App() {
               <div>
                 <dt>Email</dt>
                 <dd>{currentUser.email}</dd>
+              </div>
+              <div>
+                <dt>Role</dt>
+                <dd>{currentUser.role}</dd>
               </div>
             </dl>
 
