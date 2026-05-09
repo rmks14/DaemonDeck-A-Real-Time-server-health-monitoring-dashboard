@@ -52,6 +52,42 @@ button.secondary:hover {
   background: white;
 }
 
+.dashboard-page {
+  min-height: 100vh;
+  padding: 32px 24px;
+}
+
+.dashboard-shell {
+  display: grid;
+  gap: 20px;
+  width: min(960px, 100%);
+  margin: 0 auto;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 0 4px;
+}
+
+.dashboard-header h1,
+.panel h2 {
+  margin: 0;
+}
+
+.panel h2 {
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+.account-panel {
+  display: grid;
+  gap: 20px;
+  width: 100%;
+}
+
 .eyebrow {
   margin: 0 0 8px;
   color: #64748b;
@@ -104,13 +140,15 @@ h1 {
   margin-top: 24px;
 }
 
-.account dl {
+.account dl,
+.account-list {
   display: grid;
   gap: 12px;
   margin: 0;
 }
 
-.account dl div {
+.account dl div,
+.account-list div {
   display: flex;
   justify-content: space-between;
   gap: 16px;
@@ -118,12 +156,14 @@ h1 {
   border-bottom: 1px solid #e2e8f0;
 }
 
-.account dt {
+.account dt,
+.account-list dt {
   color: #64748b;
   font-size: 14px;
 }
 
-.account dd {
+.account dd,
+.account-list dd {
   margin: 0;
   color: #172026;
   font-weight: 700;
@@ -135,6 +175,12 @@ h1 {
   margin-top: 24px;
 }
 
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .success {
   margin-top: 16px;
   color: #047857;
@@ -143,4 +189,20 @@ h1 {
 .error {
   margin-top: 16px;
   color: #b91c1c;
+}
+
+@media (max-width: 640px) {
+  .dashboard-page {
+    padding: 20px 16px;
+  }
+
+  .dashboard-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dashboard-header button,
+  .action-row button {
+    width: 100%;
+  }
 }
