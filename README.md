@@ -42,7 +42,7 @@ GET  /api/health           Public health check
 POST /api/auth/login       Demo login
 GET  /api/auth/me          Current session user
 POST /api/auth/logout      End current session
-GET  /api/server/overview  Protected server overview
+GET  /api/server/overview  Admin-only server overview
 ```
 
 ## Environment
@@ -63,4 +63,4 @@ Copy-Item frontend/.env.example frontend/.env
 
 ## Notes
 
-Sessions are stored in memory, so signing in again is required after the backend restarts. This keeps the starter simple; add a database or real auth provider when the project needs persistence.
+Sessions are stored in memory and expire after `SESSION_TTL_MINUTES`, so signing in again is required after the backend restarts or the session expires. Demo credentials are for local development only; change or remove them before deploying anywhere public.

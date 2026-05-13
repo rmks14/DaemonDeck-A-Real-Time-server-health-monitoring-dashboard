@@ -40,28 +40,41 @@ function App() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!token) {
+    const storedToken = localStorage.getItem(tokenStorageKey);
+
+    if (!storedToken) {
       setLoading(false);
       return;
     }
 
-    const currentToken = token;
+    void restoreSession(storedToken);
+  }, []);
 
-    fetch(`${apiUrl}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${currentToken}` },
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("Session expired.");
-        }
+  async function restoreSession(storedToken: string) {
+    setLoading(true);
 
-        const data = (await response.json()) as { user: User };
-        setUser(data.user);
-        void loadServerOverview(currentToken);
-      })
-      .catch(clearSession)
-      .finally(() => setLoading(false));
-  }, [token]);
+    try {
+      const response = await fetch(`${apiUrl}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${storedToken}` },
+      });
+
+      if (!response.ok) {
+        throw new Error("Session expired.");
+      }
+
+      const data = (await response.json()) as { user: User };
+      setToken(storedToken);
+      setUser(data.user);
+
+      if (data.user.role === "admin") {
+        void loadServerOverview(storedToken);
+      }
+    } catch {
+      clearSession();
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function saveSession(nextToken: string, nextUser: User) {
     localStorage.setItem(tokenStorageKey, nextToken);
@@ -71,7 +84,10 @@ function App() {
     setServerOverviewError("");
     setNotice("");
     setError("");
-    void loadServerOverview(nextToken);
+
+    if (nextUser.role === "admin") {
+      void loadServerOverview(nextToken);
+    }
   }
 
   function clearSession() {
@@ -173,6 +189,12 @@ function App() {
         return;
       }
 
+      if (response.status === 403) {
+        setServerOverview(null);
+        setServerOverviewError("Server overview requires an admin account.");
+        return;
+      }
+
       if (!response.ok) {
         throw new Error("Could not load server overview.");
       }
@@ -255,9 +277,7 @@ function LoginPage({
       <section className="panel">
         <p className="eyebrow">ServerPulse</p>
         <h1>Sign in</h1>
-        <p className="description">
-          Use demo, viewer, or operator with password123.
-        </p>
+        <p className="description">Use one of the local demo accounts.</p>
 
         <form className="login-form" onSubmit={handleSubmit}>
           <label>
@@ -277,7 +297,7 @@ function LoginPage({
             <input
               autoComplete="current-password"
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="password123"
+              placeholder="Enter password"
               required
               type="password"
               value={password}
@@ -350,61 +370,63 @@ function DashboardPage({
           </dl>
         </section>
 
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>Server Overview</h2>
-            <button
-              className="secondary"
-              disabled={serverOverviewLoading}
-              onClick={onRefreshServerOverview}
-            >
-              {serverOverviewLoading ? "Refreshing..." : "Refresh"}
-            </button>
-          </div>
+        {user.role === "admin" && (
+          <section className="panel">
+            <div className="panel-heading">
+              <h2>Server Overview</h2>
+              <button
+                className="secondary"
+                disabled={serverOverviewLoading}
+                onClick={onRefreshServerOverview}
+              >
+                {serverOverviewLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
 
-          {serverOverview ? (
-            <dl className="detail-list">
-              <div>
-                <dt>Health</dt>
-                <dd className={getHealthClass(serverOverview.health)}>
-                  {serverOverview.health}
-                </dd>
-              </div>
-              <div>
-                <dt>Hostname</dt>
-                <dd>{serverOverview.hostname}</dd>
-              </div>
-              <div>
-                <dt>Operating system</dt>
-                <dd>{serverOverview.operatingSystem}</dd>
-              </div>
-              <div>
-                <dt>Platform</dt>
-                <dd>{serverOverview.platform}</dd>
-              </div>
-              <div>
-                <dt>Kernel</dt>
-                <dd>{serverOverview.kernel}</dd>
-              </div>
-              <div>
-                <dt>Uptime</dt>
-                <dd>{formatUptime(serverOverview.uptimeSeconds)}</dd>
-              </div>
-              <div>
-                <dt>Current time</dt>
-                <dd>{formatDateTime(serverOverview.currentTime)}</dd>
-              </div>
-            </dl>
-          ) : (
-            <p className="description">
-              {serverOverviewLoading
-                ? "Loading server details..."
-                : "Server details are not loaded yet."}
-            </p>
-          )}
+            {serverOverview ? (
+              <dl className="detail-list">
+                <div>
+                  <dt>Health</dt>
+                  <dd className={getHealthClass(serverOverview.health)}>
+                    {serverOverview.health}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Hostname</dt>
+                  <dd>{serverOverview.hostname}</dd>
+                </div>
+                <div>
+                  <dt>Operating system</dt>
+                  <dd>{serverOverview.operatingSystem}</dd>
+                </div>
+                <div>
+                  <dt>Platform</dt>
+                  <dd>{serverOverview.platform}</dd>
+                </div>
+                <div>
+                  <dt>Kernel</dt>
+                  <dd>{serverOverview.kernel}</dd>
+                </div>
+                <div>
+                  <dt>Uptime</dt>
+                  <dd>{formatUptime(serverOverview.uptimeSeconds)}</dd>
+                </div>
+                <div>
+                  <dt>Current time</dt>
+                  <dd>{formatDateTime(serverOverview.currentTime)}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="description">
+                {serverOverviewLoading
+                  ? "Loading server details..."
+                  : "Server details are not loaded yet."}
+              </p>
+            )}
 
-          {serverOverviewError && <p className="error">{serverOverviewError}</p>}
-        </section>
+            {serverOverviewError && <p className="error">{serverOverviewError}</p>}
+          </section>
+        )}
 
         <section className="panel">
           <h2>Session</h2>
