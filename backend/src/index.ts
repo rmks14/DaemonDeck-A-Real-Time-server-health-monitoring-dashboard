@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import os from "node:os";
 import cors from "cors";
 import dotenv from "dotenv";
 import express, { type Request } from "express";
@@ -8,6 +9,13 @@ dotenv.config();
 const app = express();
 const port = Number(process.env.PORT) || 5000;
 const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+const configuredSessionTtlMinutes = Number(process.env.SESSION_TTL_MINUTES);
+const sessionTtlMinutes =
+  Number.isFinite(configuredSessionTtlMinutes) &&
+  configuredSessionTtlMinutes > 0
+    ? configuredSessionTtlMinutes
+    : 60;
+const sessionTtlMs = sessionTtlMinutes * 60 * 1000;
 
 type Role = "viewer" | "operator" | "admin";
 
@@ -18,6 +26,23 @@ type User = {
   email: string;
   role: Role;
   password: string;
+};
+
+type HealthStatus = "Healthy" | "Warning" | "Critical";
+
+type ServerOverview = {
+  hostname: string;
+  operatingSystem: string;
+  kernel: string;
+  platform: string;
+  uptimeSeconds: number;
+  currentTime: string;
+  health: HealthStatus;
+};
+
+type Session = {
+  userId: string;
+  expiresAt: number;
 };
 
 const users: User[] = [
@@ -47,7 +72,7 @@ const users: User[] = [
   },
 ];
 
-const sessions = new Map<string, string>();
+const sessions = new Map<string, Session>();
 
 app.use(cors({ origin: clientUrl }));
 app.use(express.json());
@@ -64,8 +89,70 @@ function getToken(req: Request) {
 
 function getCurrentUser(req: Request) {
   const token = getToken(req);
-  const userId = token ? sessions.get(token) : null;
-  return users.find((user) => user.id === userId) || null;
+
+  if (!token) {
+    return null;
+  }
+
+  const session = sessions.get(token);
+
+  if (!session) {
+    return null;
+  }
+
+  if (session.expiresAt <= Date.now()) {
+    sessions.delete(token);
+    return null;
+  }
+
+  return users.find((user) => user.id === session.userId) || null;
+}
+
+function cleanupExpiredSessions() {
+  const now = Date.now();
+
+  for (const [token, session] of sessions) {
+    if (session.expiresAt <= now) {
+      sessions.delete(token);
+    }
+  }
+}
+
+function createSession(user: User) {
+  cleanupExpiredSessions();
+
+  const token = crypto.randomUUID();
+  sessions.set(token, {
+    userId: user.id,
+    expiresAt: Date.now() + sessionTtlMs,
+  });
+  return token;
+}
+
+function getServerHealth(): HealthStatus {
+  const freeMemoryRatio = os.freemem() / os.totalmem();
+
+  if (freeMemoryRatio < 0.05) {
+    return "Critical";
+  }
+
+  if (freeMemoryRatio < 0.15) {
+    return "Warning";
+  }
+
+  return "Healthy";
+}
+
+function getServerOverview(): ServerOverview {
+  return {
+    hostname: os.hostname(),
+    operatingSystem: os.type(),
+    kernel: os.release(),
+    platform: os.platform(),
+    uptimeSeconds: Math.floor(os.uptime()),
+    currentTime: new Date().toISOString(),
+    health: getServerHealth(),
+  };
 }
 
 app.get("/", (_req, res) => {
@@ -74,6 +161,22 @@ app.get("/", (_req, res) => {
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
+});
+
+app.get("/api/server/overview", (req, res) => {
+  const user = getCurrentUser(req);
+
+  if (!user) {
+    res.status(401).json({ message: "Invalid or expired session." });
+    return;
+  }
+
+  if (user.role !== "admin") {
+    res.status(403).json({ message: "Admin access is required." });
+    return;
+  }
+
+  res.json(getServerOverview());
 });
 
 app.post("/api/auth/login", (req, res) => {
@@ -97,8 +200,7 @@ app.post("/api/auth/login", (req, res) => {
     return;
   }
 
-  const token = crypto.randomUUID();
-  sessions.set(token, user.id);
+  const token = createSession(user);
   res.json({ token, user: publicUser(user) });
 });
 

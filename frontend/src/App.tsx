@@ -17,46 +17,85 @@ type AuthResponse = {
   message?: string;
 };
 
+type ServerOverview = {
+  hostname: string;
+  operatingSystem: string;
+  kernel: string;
+  platform: string;
+  uptimeSeconds: number;
+  currentTime: string;
+  health: "Healthy" | "Warning" | "Critical";
+};
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(tokenStorageKey));
   const [user, setUser] = useState<User | null>(null);
+  const [serverOverview, setServerOverview] = useState<ServerOverview | null>(
+    null,
+  );
+  const [serverOverviewLoading, setServerOverviewLoading] = useState(false);
+  const [serverOverviewError, setServerOverviewError] = useState("");
   const [loading, setLoading] = useState(Boolean(token));
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!token) {
+    const storedToken = localStorage.getItem(tokenStorageKey);
+
+    if (!storedToken) {
       setLoading(false);
       return;
     }
 
-    fetch(`${apiUrl}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("Session expired.");
-        }
+    void restoreSession(storedToken);
+  }, []);
 
-        const data = (await response.json()) as { user: User };
-        setUser(data.user);
-      })
-      .catch(clearSession)
-      .finally(() => setLoading(false));
-  }, [token]);
+  async function restoreSession(storedToken: string) {
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${apiUrl}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${storedToken}` },
+      });
+
+      if (!response.ok) {
+        throw new Error("Session expired.");
+      }
+
+      const data = (await response.json()) as { user: User };
+      setToken(storedToken);
+      setUser(data.user);
+
+      if (data.user.role === "admin") {
+        void loadServerOverview(storedToken);
+      }
+    } catch {
+      clearSession();
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function saveSession(nextToken: string, nextUser: User) {
     localStorage.setItem(tokenStorageKey, nextToken);
     setToken(nextToken);
     setUser(nextUser);
+    setServerOverview(null);
+    setServerOverviewError("");
     setNotice("");
     setError("");
+
+    if (nextUser.role === "admin") {
+      void loadServerOverview(nextToken);
+    }
   }
 
   function clearSession() {
     localStorage.removeItem(tokenStorageKey);
     setToken(null);
     setUser(null);
+    setServerOverview(null);
+    setServerOverviewError("");
   }
 
   async function login(identifier: string, password: string) {
@@ -132,6 +171,48 @@ function App() {
     }
   }
 
+  async function loadServerOverview(sessionToken = token) {
+    if (!sessionToken) {
+      return;
+    }
+
+    setServerOverviewLoading(true);
+    setServerOverviewError("");
+
+    try {
+      const response = await fetch(`${apiUrl}/api/server/overview`, {
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+
+      if (response.status === 401) {
+        clearSession();
+        return;
+      }
+
+      if (response.status === 403) {
+        setServerOverview(null);
+        setServerOverviewError("Server overview requires an admin account.");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error("Could not load server overview.");
+      }
+
+      const data = (await response.json()) as ServerOverview;
+      setServerOverview(data);
+    } catch (caughtError) {
+      setServerOverview(null);
+      setServerOverviewError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not load server overview.",
+      );
+    } finally {
+      setServerOverviewLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <main className="page">
@@ -154,6 +235,10 @@ function App() {
       onCheckBackend={checkBackend}
       onCheckSession={checkSession}
       onLogout={logout}
+      onRefreshServerOverview={loadServerOverview}
+      serverOverview={serverOverview}
+      serverOverviewError={serverOverviewError}
+      serverOverviewLoading={serverOverviewLoading}
       user={user}
     />
   );
@@ -192,9 +277,7 @@ function LoginPage({
       <section className="panel">
         <p className="eyebrow">ServerPulse</p>
         <h1>Sign in</h1>
-        <p className="description">
-          Use demo, viewer, or operator with password123.
-        </p>
+        <p className="description">Use one of the local demo accounts.</p>
 
         <form className="login-form" onSubmit={handleSubmit}>
           <label>
@@ -214,7 +297,7 @@ function LoginPage({
             <input
               autoComplete="current-password"
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="password123"
+              placeholder="Enter password"
               required
               type="password"
               value={password}
@@ -238,6 +321,10 @@ function DashboardPage({
   onCheckBackend,
   onCheckSession,
   onLogout,
+  onRefreshServerOverview,
+  serverOverview,
+  serverOverviewError,
+  serverOverviewLoading,
   user,
 }: {
   error: string;
@@ -245,6 +332,10 @@ function DashboardPage({
   onCheckBackend: () => Promise<void>;
   onCheckSession: () => Promise<void>;
   onLogout: () => Promise<void>;
+  onRefreshServerOverview: () => Promise<void>;
+  serverOverview: ServerOverview | null;
+  serverOverviewError: string;
+  serverOverviewLoading: boolean;
   user: User;
 }) {
   return (
@@ -263,7 +354,7 @@ function DashboardPage({
 
         <section className="panel account-panel">
           <h2>Signed in as {user.name}</h2>
-          <dl className="account-list">
+          <dl className="detail-list">
             <div>
               <dt>Username</dt>
               <dd>{user.username}</dd>
@@ -278,6 +369,64 @@ function DashboardPage({
             </div>
           </dl>
         </section>
+
+        {user.role === "admin" && (
+          <section className="panel">
+            <div className="panel-heading">
+              <h2>Server Overview</h2>
+              <button
+                className="secondary"
+                disabled={serverOverviewLoading}
+                onClick={onRefreshServerOverview}
+              >
+                {serverOverviewLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            {serverOverview ? (
+              <dl className="detail-list">
+                <div>
+                  <dt>Health</dt>
+                  <dd className={getHealthClass(serverOverview.health)}>
+                    {serverOverview.health}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Hostname</dt>
+                  <dd>{serverOverview.hostname}</dd>
+                </div>
+                <div>
+                  <dt>Operating system</dt>
+                  <dd>{serverOverview.operatingSystem}</dd>
+                </div>
+                <div>
+                  <dt>Platform</dt>
+                  <dd>{serverOverview.platform}</dd>
+                </div>
+                <div>
+                  <dt>Kernel</dt>
+                  <dd>{serverOverview.kernel}</dd>
+                </div>
+                <div>
+                  <dt>Uptime</dt>
+                  <dd>{formatUptime(serverOverview.uptimeSeconds)}</dd>
+                </div>
+                <div>
+                  <dt>Current time</dt>
+                  <dd>{formatDateTime(serverOverview.currentTime)}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="description">
+                {serverOverviewLoading
+                  ? "Loading server details..."
+                  : "Server details are not loaded yet."}
+              </p>
+            )}
+
+            {serverOverviewError && <p className="error">{serverOverviewError}</p>}
+          </section>
+        )}
 
         <section className="panel">
           <h2>Session</h2>
@@ -298,6 +447,49 @@ function DashboardPage({
       </section>
     </main>
   );
+}
+
+function formatUptime(totalSeconds: number) {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+
+  if (days > 0) {
+    return `${days}d ${hours}h`;
+  }
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ${remainingSeconds}s`;
+  }
+
+  return `${remainingSeconds}s`;
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "short",
+    second: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function getHealthClass(health: ServerOverview["health"]) {
+  return `health-${health.toLowerCase()}`;
 }
 
 export default App;

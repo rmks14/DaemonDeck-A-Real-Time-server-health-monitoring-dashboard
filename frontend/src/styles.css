@@ -129,17 +129,25 @@ h2 {
   padding: 24px 0 4px;
 }
 
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
 .account-panel,
-.account-list {
+.detail-list {
   display: grid;
   gap: 12px;
 }
 
-.account-list {
+.detail-list {
   margin: 0;
 }
 
-.account-list div {
+.detail-list div {
   display: flex;
   justify-content: space-between;
   gap: 16px;
@@ -147,12 +155,12 @@ h2 {
   border-bottom: 1px solid #e2e8f0;
 }
 
-.account-list dt {
+.detail-list dt {
   color: #64748b;
   font-size: 14px;
 }
 
-.account-list dd {
+.detail-list dd {
   margin: 0;
   font-weight: 700;
   text-align: right;
@@ -179,12 +187,25 @@ h2 {
   color: #b91c1c;
 }
 
+.health-healthy {
+  color: #047857;
+}
+
+.health-warning {
+  color: #b45309;
+}
+
+.health-critical {
+  color: #b91c1c;
+}
+
 @media (max-width: 640px) {
   .dashboard-page {
     padding: 20px 16px;
   }
 
-  .dashboard-header {
+  .dashboard-header,
+  .panel-heading {
     align-items: stretch;
     flex-direction: column;
   }
