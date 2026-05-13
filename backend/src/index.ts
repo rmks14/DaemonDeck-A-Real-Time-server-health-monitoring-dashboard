@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import os from "node:os";
 import cors from "cors";
 import dotenv from "dotenv";
 import express, { type Request } from "express";
@@ -18,6 +19,18 @@ type User = {
   email: string;
   role: Role;
   password: string;
+};
+
+type HealthStatus = "Healthy" | "Warning" | "Critical";
+
+type ServerOverview = {
+  hostname: string;
+  operatingSystem: string;
+  kernel: string;
+  platform: string;
+  uptimeSeconds: number;
+  currentTime: string;
+  health: HealthStatus;
 };
 
 const users: User[] = [
@@ -68,12 +81,37 @@ function getCurrentUser(req: Request) {
   return users.find((user) => user.id === userId) || null;
 }
 
+function getServerHealth(): HealthStatus {
+  return "Healthy";
+}
+
+function getServerOverview(): ServerOverview {
+  return {
+    hostname: os.hostname(),
+    operatingSystem: os.type(),
+    kernel: os.release(),
+    platform: os.platform(),
+    uptimeSeconds: Math.floor(os.uptime()),
+    currentTime: new Date().toISOString(),
+    health: getServerHealth(),
+  };
+}
+
 app.get("/", (_req, res) => {
   res.json({ message: "Backend is running" });
 });
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
+});
+
+app.get("/api/server/overview", (req, res) => {
+  if (!getCurrentUser(req)) {
+    res.status(401).json({ message: "Invalid or expired session." });
+    return;
+  }
+
+  res.json(getServerOverview());
 });
 
 app.post("/api/auth/login", (req, res) => {

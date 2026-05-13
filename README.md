@@ -1,6 +1,6 @@
 # Simple Auth Starter
 
-A small React and Express starter with demo login, an authenticated dashboard, and a backend health check.
+A small React and Express starter with demo login, an authenticated dashboard, server overview details, and a backend health check.
 
 ## What It Uses
 
@@ -34,6 +34,16 @@ npm run dev
 ```
 
 The app runs on `http://localhost:5173`.
+
+## API
+
+```txt
+GET  /api/health           Public health check
+POST /api/auth/login       Demo login
+GET  /api/auth/me          Current session user
+POST /api/auth/logout      End current session
+GET  /api/server/overview  Protected server overview
+```
 
 ## Environment
 
