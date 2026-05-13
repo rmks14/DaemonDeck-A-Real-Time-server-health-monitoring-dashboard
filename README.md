@@ -1,13 +1,21 @@
 # Simple Auth Starter
 
-This is a small frontend/backend starter for a future auth-based project.
+A small React and Express starter with demo login, an authenticated dashboard, and a backend health check.
 
-## Folders
+## What It Uses
 
-- `backend` - Node.js, Express, TypeScript API
-- `frontend` - React, TypeScript UI
+- `backend` - Express, TypeScript, in-memory demo sessions
+- `frontend` - React, TypeScript, Vite
 
-## Backend
+Demo users:
+
+```txt
+demo / password123
+viewer / password123
+operator / password123
+```
+
+## Run Backend
 
 ```bash
 cd backend
@@ -15,9 +23,9 @@ npm install
 npm run dev
 ```
 
-Backend runs on `http://localhost:5000`.
+The API runs on `http://localhost:5000`.
 
-## Frontend
+## Run Frontend
 
 ```bash
 cd frontend
@@ -25,34 +33,24 @@ npm install
 npm run dev
 ```
 
-Frontend runs on `http://localhost:5173`.
+The app runs on `http://localhost:5173`.
 
-## Environment Files
+## Environment
 
-Copy the example files before running locally:
+Optional local env files:
 
 ```bash
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 ```
 
-On Windows PowerShell:
+PowerShell:
 
 ```powershell
 Copy-Item backend/.env.example backend/.env
 Copy-Item frontend/.env.example frontend/.env
 ```
 
-## Test The Connection
+## Notes
 
-Start the backend and frontend in separate terminals, then open:
-
-```txt
-http://localhost:5173
-```
-
-Click `Check backend`. If the backend is running, you should see:
-
-```txt
-Backend health: ok
-```
+Sessions are stored in memory, so signing in again is required after the backend restarts. This keeps the starter simple; add a database or real auth provider when the project needs persistence.
