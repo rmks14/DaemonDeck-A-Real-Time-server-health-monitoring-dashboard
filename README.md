@@ -1,10 +1,10 @@
 # Simple Auth Starter
 
-A small React and Express starter with demo login, an authenticated dashboard, server overview details, and a backend health check.
+A small React and Express starter with demo login, JWT auth, protected dashboard routes, role-based sections, server overview details, and a backend health check.
 
 ## What It Uses
 
-- `backend` - Express, TypeScript, signed expiring auth tokens
+- `backend` - Express, TypeScript, signed expiring JWT auth
 - `frontend` - React, TypeScript, Vite
 
 Demo users:
@@ -38,11 +38,28 @@ The app runs on `http://localhost:5173`.
 ## API
 
 ```txt
-GET  /api/health           Public health check
-POST /api/auth/login       Demo login
-GET  /api/auth/me          Current session user
-POST /api/auth/logout      End current session
-GET  /api/server/overview  Admin-only server overview
+GET   /api/health                    Public health check
+POST  /api/auth/login                Demo login
+GET   /api/auth/me                   Current session user
+POST  /api/auth/logout               End current session
+GET   /api/metrics                   Viewer/operator/admin metrics
+GET   /api/logs                      Viewer/operator/admin logs
+GET   /api/processes                 Operator/admin process list
+POST  /api/processes/:id/restart     Operator/admin restart action
+GET   /api/server/overview           Admin-only server overview
+GET   /api/admin/users               Admin user list
+PATCH /api/admin/users/:id/role      Admin role management
+GET   /api/admin/alerts              Admin alert rules
+PATCH /api/admin/alerts/:id          Admin alert rule toggle
+POST  /api/admin/system-actions      Admin system action
+```
+
+## Roles
+
+```txt
+viewer    Metrics and logs
+operator  Metrics, logs, and process restarts
+admin     Metrics, logs, process restarts, users, alerts, and system actions
 ```
 
 ## Environment
@@ -63,4 +80,4 @@ Copy-Item frontend/.env.example frontend/.env
 
 ## Notes
 
-Auth tokens are signed with `AUTH_TOKEN_SECRET` and expire after `SESSION_TTL_MINUTES`. Keep the same secret across backend restarts so browser refreshes can restore the session. Demo credentials are for local development only; change or remove them before deploying anywhere public.
+JWTs are signed with `AUTH_TOKEN_SECRET` and expire after `SESSION_TTL_MINUTES`. Keep the same secret across backend restarts so browser refreshes can restore the session. Demo credentials are for local development only; change or remove them before deploying anywhere public.

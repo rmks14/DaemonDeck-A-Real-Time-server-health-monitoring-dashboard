@@ -137,6 +137,24 @@ h2 {
   margin-bottom: 20px;
 }
 
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tab {
+  color: #172026;
+  background: #e2e8f0;
+}
+
+.tab:hover,
+.tab.active,
+.active-action {
+  color: white;
+  background: #2563eb;
+}
+
 .account-panel,
 .detail-list {
   display: grid;
@@ -172,6 +190,52 @@ h2 {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 24px;
+}
+
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.stack.spaced {
+  margin-top: 20px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.muted {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.log-line {
+  margin: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #172026;
+}
+
+.log-warning {
+  color: #92400e;
+}
+
+.log-critical {
+  color: #991b1b;
 }
 
 .success,
@@ -211,7 +275,18 @@ h2 {
   }
 
   .actions,
+  .row,
   .actions button {
+    width: 100%;
+  }
+
+  .row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inline-actions,
+  .inline-actions button {
     width: 100%;
   }
 }
