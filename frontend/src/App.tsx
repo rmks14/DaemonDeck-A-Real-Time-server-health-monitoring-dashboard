@@ -14,7 +14,13 @@ type User = {
 type AuthResponse = {
   token: string;
   user: User;
+  sessionExpiresAt: string;
   message?: string;
+};
+
+type SessionResponse = {
+  user: User;
+  sessionExpiresAt: string;
 };
 
 type ServerOverview = {
@@ -30,6 +36,7 @@ type ServerOverview = {
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(tokenStorageKey));
   const [user, setUser] = useState<User | null>(null);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState("");
   const [serverOverview, setServerOverview] = useState<ServerOverview | null>(
     null,
   );
@@ -58,28 +65,39 @@ function App() {
         headers: { Authorization: `Bearer ${storedToken}` },
       });
 
-      if (!response.ok) {
-        throw new Error("Session expired.");
+      if (response.status === 401) {
+        clearSession("Your session expired. Please sign in again.");
+        return;
       }
 
-      const data = (await response.json()) as { user: User };
+      if (!response.ok) {
+        throw new Error("Could not restore session.");
+      }
+
+      const data = (await response.json()) as SessionResponse;
       setToken(storedToken);
       setUser(data.user);
+      setSessionExpiresAt(data.sessionExpiresAt);
 
       if (data.user.role === "admin") {
         void loadServerOverview(storedToken);
       }
     } catch {
-      clearSession();
+      clearSession("Could not restore your session. Please sign in again.");
     } finally {
       setLoading(false);
     }
   }
 
-  function saveSession(nextToken: string, nextUser: User) {
+  function saveSession(
+    nextToken: string,
+    nextUser: User,
+    nextSessionExpiresAt: string,
+  ) {
     localStorage.setItem(tokenStorageKey, nextToken);
     setToken(nextToken);
     setUser(nextUser);
+    setSessionExpiresAt(nextSessionExpiresAt);
     setServerOverview(null);
     setServerOverviewError("");
     setNotice("");
@@ -90,12 +108,20 @@ function App() {
     }
   }
 
-  function clearSession() {
+  function clearSession(message = "") {
     localStorage.removeItem(tokenStorageKey);
     setToken(null);
     setUser(null);
+    setSessionExpiresAt("");
     setServerOverview(null);
     setServerOverviewError("");
+    setNotice("");
+    setError(message);
+  }
+
+  function clearMessages() {
+    setNotice("");
+    setError("");
   }
 
   async function login(identifier: string, password: string) {
@@ -109,11 +135,11 @@ function App() {
     });
     const data = (await response.json()) as Partial<AuthResponse>;
 
-    if (!response.ok || !data.token || !data.user) {
+    if (!response.ok || !data.token || !data.user || !data.sessionExpiresAt) {
       throw new Error(data.message || "Login failed.");
     }
 
-    saveSession(data.token, data.user);
+    saveSession(data.token, data.user, data.sessionExpiresAt);
   }
 
   async function logout() {
@@ -140,16 +166,21 @@ function App() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (!response.ok) {
-        throw new Error("Session expired.");
+      if (response.status === 401) {
+        clearSession("Your session expired. Please sign in again.");
+        return;
       }
 
-      const data = (await response.json()) as { user: User };
+      if (!response.ok) {
+        throw new Error("Could not validate session.");
+      }
+
+      const data = (await response.json()) as SessionResponse;
       setUser(data.user);
+      setSessionExpiresAt(data.sessionExpiresAt);
       setNotice("Session is active.");
     } catch {
-      clearSession();
-      setError("Please sign in again.");
+      setError("Could not validate the current session.");
     }
   }
 
@@ -171,8 +202,10 @@ function App() {
     }
   }
 
-  async function loadServerOverview(sessionToken = token) {
-    if (!sessionToken) {
+  async function loadServerOverview(sessionToken?: string) {
+    const authToken = sessionToken || token;
+
+    if (!authToken) {
       return;
     }
 
@@ -181,11 +214,11 @@ function App() {
 
     try {
       const response = await fetch(`${apiUrl}/api/server/overview`, {
-        headers: { Authorization: `Bearer ${sessionToken}` },
+        headers: { Authorization: `Bearer ${authToken}` },
       });
 
       if (response.status === 401) {
-        clearSession();
+        clearSession("Your session expired. Please sign in again.");
         return;
       }
 
@@ -225,7 +258,13 @@ function App() {
   }
 
   if (!user) {
-    return <LoginPage error={error} onLogin={login} />;
+    return (
+      <LoginPage
+        error={error}
+        onClearMessages={clearMessages}
+        onLogin={login}
+      />
+    );
   }
 
   return (
@@ -236,6 +275,7 @@ function App() {
       onCheckSession={checkSession}
       onLogout={logout}
       onRefreshServerOverview={loadServerOverview}
+      sessionExpiresAt={sessionExpiresAt}
       serverOverview={serverOverview}
       serverOverviewError={serverOverviewError}
       serverOverviewLoading={serverOverviewLoading}
@@ -246,23 +286,27 @@ function App() {
 
 function LoginPage({
   error,
+  onClearMessages,
   onLogin,
 }: {
   error: string;
+  onClearMessages: () => void;
   onLogin: (identifier: string, password: string) => Promise<void>;
 }) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [loginError, setLoginError] = useState(error);
+  const [loginError, setLoginError] = useState("");
+  const visibleError = loginError || error;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
     setLoginError("");
+    onClearMessages();
 
     try {
-      await onLogin(identifier, password);
+      await onLogin(identifier.trim(), password);
     } catch (caughtError) {
       setLoginError(
         caughtError instanceof Error ? caughtError.message : "Could not sign in.",
@@ -284,7 +328,11 @@ function LoginPage({
             Email or username
             <input
               autoComplete="username"
-              onChange={(event) => setIdentifier(event.target.value)}
+              onChange={(event) => {
+                setIdentifier(event.target.value);
+                setLoginError("");
+                onClearMessages();
+              }}
               placeholder="demo"
               required
               type="text"
@@ -296,7 +344,11 @@ function LoginPage({
             Password
             <input
               autoComplete="current-password"
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setLoginError("");
+                onClearMessages();
+              }}
               placeholder="Enter password"
               required
               type="password"
@@ -309,7 +361,7 @@ function LoginPage({
           </button>
         </form>
 
-        {(loginError || error) && <p className="error">{loginError || error}</p>}
+        {visibleError && <p className="error">{visibleError}</p>}
       </section>
     </main>
   );
@@ -322,6 +374,7 @@ function DashboardPage({
   onCheckSession,
   onLogout,
   onRefreshServerOverview,
+  sessionExpiresAt,
   serverOverview,
   serverOverviewError,
   serverOverviewLoading,
@@ -333,6 +386,7 @@ function DashboardPage({
   onCheckSession: () => Promise<void>;
   onLogout: () => Promise<void>;
   onRefreshServerOverview: () => Promise<void>;
+  sessionExpiresAt: string;
   serverOverview: ServerOverview | null;
   serverOverviewError: string;
   serverOverviewLoading: boolean;
@@ -377,7 +431,9 @@ function DashboardPage({
               <button
                 className="secondary"
                 disabled={serverOverviewLoading}
-                onClick={onRefreshServerOverview}
+                onClick={() => {
+                  void onRefreshServerOverview();
+                }}
               >
                 {serverOverviewLoading ? "Refreshing..." : "Refresh"}
               </button>
@@ -433,6 +489,11 @@ function DashboardPage({
           <p className="description">
             This dashboard is visible while your session token is valid.
           </p>
+          {sessionExpiresAt && (
+            <p className="description">
+              Session expires {formatDateTime(sessionExpiresAt)}.
+            </p>
+          )}
 
           <div className="actions">
             <button onClick={onCheckSession}>Check session</button>

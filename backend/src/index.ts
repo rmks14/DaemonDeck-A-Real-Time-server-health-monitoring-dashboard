@@ -16,6 +16,7 @@ const sessionTtlMinutes =
     ? configuredSessionTtlMinutes
     : 60;
 const sessionTtlMs = sessionTtlMinutes * 60 * 1000;
+const authTokenSecret = getAuthTokenSecret();
 
 type Role = "viewer" | "operator" | "admin";
 
@@ -43,6 +44,14 @@ type ServerOverview = {
 type Session = {
   userId: string;
   expiresAt: number;
+  tokenId: string;
+};
+
+type AuthTokenPayload = Session;
+
+type CurrentSession = {
+  user: User;
+  session: Session;
 };
 
 const users: User[] = [
@@ -72,10 +81,25 @@ const users: User[] = [
   },
 ];
 
-const sessions = new Map<string, Session>();
+const revokedTokens = new Map<string, number>();
 
 app.use(cors({ origin: clientUrl }));
 app.use(express.json());
+
+function getAuthTokenSecret() {
+  if (process.env.AUTH_TOKEN_SECRET) {
+    return process.env.AUTH_TOKEN_SECRET;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("AUTH_TOKEN_SECRET must be set in production.");
+  }
+
+  console.warn(
+    "AUTH_TOKEN_SECRET is not set. Using an insecure development secret.",
+  );
+  return "dev-only-change-me";
+}
 
 function publicUser(user: User) {
   const { password: _password, ...safeUser } = user;
@@ -87,46 +111,122 @@ function getToken(req: Request) {
   return scheme?.toLowerCase() === "bearer" && token ? token : null;
 }
 
-function getCurrentUser(req: Request) {
+function signTokenPart(encodedPayload: string) {
+  return crypto
+    .createHmac("sha256", authTokenSecret)
+    .update(encodedPayload)
+    .digest("base64url");
+}
+
+function signaturesMatch(actualSignature: string, expectedSignature: string) {
+  const actual = Buffer.from(actualSignature);
+  const expected = Buffer.from(expectedSignature);
+
+  return (
+    actual.length === expected.length && crypto.timingSafeEqual(actual, expected)
+  );
+}
+
+function isAuthTokenPayload(value: unknown): value is AuthTokenPayload {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const payload = value as Partial<AuthTokenPayload>;
+
+  return (
+    typeof payload.userId === "string" &&
+    typeof payload.expiresAt === "number" &&
+    Number.isFinite(payload.expiresAt) &&
+    typeof payload.tokenId === "string"
+  );
+}
+
+function cleanupRevokedTokens() {
+  const now = Date.now();
+
+  for (const [tokenId, expiresAt] of revokedTokens) {
+    if (expiresAt <= now) {
+      revokedTokens.delete(tokenId);
+    }
+  }
+}
+
+function verifyAuthToken(token: string): Session | null {
+  const tokenParts = token.split(".");
+
+  if (tokenParts.length !== 2) {
+    return null;
+  }
+
+  const [encodedPayload, signature] = tokenParts;
+
+  if (!encodedPayload || !signature) {
+    return null;
+  }
+
+  const expectedSignature = signTokenPart(encodedPayload);
+
+  if (!signaturesMatch(signature, expectedSignature)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, "base64url").toString("utf8"),
+    ) as unknown;
+
+    if (!isAuthTokenPayload(payload) || payload.expiresAt <= Date.now()) {
+      return null;
+    }
+
+    if (revokedTokens.has(payload.tokenId)) {
+      return null;
+    }
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function getCurrentSession(req: Request): CurrentSession | null {
   const token = getToken(req);
 
   if (!token) {
     return null;
   }
 
-  const session = sessions.get(token);
+  const session = verifyAuthToken(token);
 
   if (!session) {
     return null;
   }
 
-  if (session.expiresAt <= Date.now()) {
-    sessions.delete(token);
-    return null;
-  }
+  const user = users.find((candidate) => candidate.id === session.userId);
 
-  return users.find((user) => user.id === session.userId) || null;
-}
-
-function cleanupExpiredSessions() {
-  const now = Date.now();
-
-  for (const [token, session] of sessions) {
-    if (session.expiresAt <= now) {
-      sessions.delete(token);
-    }
-  }
+  return user ? { user, session } : null;
 }
 
 function createSession(user: User) {
-  cleanupExpiredSessions();
+  cleanupRevokedTokens();
 
-  const token = crypto.randomUUID();
-  sessions.set(token, {
+  const session = {
     userId: user.id,
     expiresAt: Date.now() + sessionTtlMs,
-  });
-  return token;
+    tokenId: crypto.randomUUID(),
+  };
+  const payload: AuthTokenPayload = session;
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString(
+    "base64url",
+  );
+  const token = `${encodedPayload}.${signTokenPart(encodedPayload)}`;
+
+  return { token, session };
+}
+
+function formatSessionExpiresAt(session: Session) {
+  return new Date(session.expiresAt).toISOString();
 }
 
 function getServerHealth(): HealthStatus {
@@ -164,14 +264,14 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.get("/api/server/overview", (req, res) => {
-  const user = getCurrentUser(req);
+  const currentSession = getCurrentSession(req);
 
-  if (!user) {
+  if (!currentSession) {
     res.status(401).json({ message: "Invalid or expired session." });
     return;
   }
 
-  if (user.role !== "admin") {
+  if (currentSession.user.role !== "admin") {
     res.status(403).json({ message: "Admin access is required." });
     return;
   }
@@ -200,26 +300,34 @@ app.post("/api/auth/login", (req, res) => {
     return;
   }
 
-  const token = createSession(user);
-  res.json({ token, user: publicUser(user) });
+  const { token, session } = createSession(user);
+  res.json({
+    token,
+    user: publicUser(user),
+    sessionExpiresAt: formatSessionExpiresAt(session),
+  });
 });
 
 app.get("/api/auth/me", (req, res) => {
-  const user = getCurrentUser(req);
+  const currentSession = getCurrentSession(req);
 
-  if (!user) {
+  if (!currentSession) {
     res.status(401).json({ message: "Invalid or expired session." });
     return;
   }
 
-  res.json({ user: publicUser(user) });
+  res.json({
+    user: publicUser(currentSession.user),
+    sessionExpiresAt: formatSessionExpiresAt(currentSession.session),
+  });
 });
 
-app.post("/api/auth/logout", (req, res) => {
-  const token = getToken(req);
+app.post("/api/auth/logout", (_req, res) => {
+  const token = getToken(_req);
+  const session = token ? verifyAuthToken(token) : null;
 
-  if (token) {
-    sessions.delete(token);
+  if (session) {
+    revokedTokens.set(session.tokenId, session.expiresAt);
   }
 
   res.json({ message: "Logged out." });

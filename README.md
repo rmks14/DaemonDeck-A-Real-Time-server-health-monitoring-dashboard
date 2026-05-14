@@ -4,7 +4,7 @@ A small React and Express starter with demo login, an authenticated dashboard, s
 
 ## What It Uses
 
-- `backend` - Express, TypeScript, in-memory demo sessions
+- `backend` - Express, TypeScript, signed expiring auth tokens
 - `frontend` - React, TypeScript, Vite
 
 Demo users:
@@ -63,4 +63,4 @@ Copy-Item frontend/.env.example frontend/.env
 
 ## Notes
 
-Sessions are stored in memory and expire after `SESSION_TTL_MINUTES`, so signing in again is required after the backend restarts or the session expires. Demo credentials are for local development only; change or remove them before deploying anywhere public.
+Auth tokens are signed with `AUTH_TOKEN_SECRET` and expire after `SESSION_TTL_MINUTES`. Keep the same secret across backend restarts so browser refreshes can restore the session. Demo credentials are for local development only; change or remove them before deploying anywhere public.
