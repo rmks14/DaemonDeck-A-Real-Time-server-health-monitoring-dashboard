@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import os from "node:os";
 import cors from "cors";
@@ -47,13 +48,20 @@ type CurrentSession = {
 };
 
 type ServerOverview = {
-  hostname: string;
-  operatingSystem: string;
-  kernel: string;
-  platform: string;
-  uptimeSeconds: number;
+  activeServiceCount: number;
+  cpuUsagePercent: number;
+  criticalAlertCount: number;
   currentTime: string;
+  diskUsagePercent: number;
   health: HealthStatus;
+  hostname: string;
+  kernel: string;
+  memoryUsagePercent: number;
+  operatingSystem: string;
+  platform: string;
+  runningProcessCount: number;
+  uptimeSeconds: number;
+  warningAlertCount: number;
 };
 
 type ServiceRecord = {
@@ -329,40 +337,182 @@ function addLog(message: string, level: LogLevel = "info") {
   activityLogs.splice(25);
 }
 
-function getServerHealth(): HealthStatus {
-  const freeMemoryRatio = os.freemem() / os.totalmem();
+function getCpuTimes() {
+  return os.cpus().reduce(
+    (summary, cpu) => {
+      const total = Object.values(cpu.times).reduce((sum, time) => sum + time, 0);
 
-  if (freeMemoryRatio < 0.05) {
+      return {
+        idle: summary.idle + cpu.times.idle,
+        total: summary.total + total,
+      };
+    },
+    { idle: 0, total: 0 },
+  );
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+async function getCpuUsagePercent() {
+  const start = getCpuTimes();
+  await wait(100);
+  const end = getCpuTimes();
+  const idle = end.idle - start.idle;
+  const total = end.total - start.total;
+
+  if (total <= 0) {
+    return 0;
+  }
+
+  return clampPercent(Math.round(100 - (idle / total) * 100));
+}
+
+function getDiskUsagePercent() {
+  try {
+    if (os.platform() === "win32") {
+      const drive = /^[a-z]:/i.test(process.cwd())
+        ? process.cwd().slice(0, 2)
+        : process.env.SystemDrive || "C:";
+      const output = execFileSync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-Command",
+          `$disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${drive}'"; if ($disk -and $disk.Size) { [math]::Round((($disk.Size - $disk.FreeSpace) / $disk.Size) * 100) }`,
+        ],
+        { encoding: "utf8", windowsHide: true },
+      );
+
+      return clampPercent(Number(output.trim()));
+    }
+
+    const output = execFileSync("df", ["-kP", process.cwd()], {
+      encoding: "utf8",
+    });
+    const [, dataLine] = output.trim().split(/\r?\n/);
+    const usage = dataLine?.split(/\s+/)[4]?.replace("%", "");
+
+    return clampPercent(Number(usage));
+  } catch {
+    return 0;
+  }
+}
+
+function getRunningProcessCount() {
+  try {
+    if (os.platform() === "win32") {
+      const output = execFileSync(
+        "powershell",
+        ["-NoProfile", "-Command", "(Get-Process).Count"],
+        { encoding: "utf8", windowsHide: true },
+      );
+
+      return Math.max(0, Number(output.trim()) || 0);
+    }
+
+    const output = execFileSync("ps", ["-e", "-o", "pid="], {
+      encoding: "utf8",
+    });
+
+    return output.trim().split(/\r?\n/).filter(Boolean).length;
+  } catch {
+    return 1;
+  }
+}
+
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.min(100, Math.max(0, value));
+}
+
+function getMetricStatus(
+  value: number,
+  warningThreshold: number,
+  criticalThreshold: number,
+): HealthStatus {
+  if (value > criticalThreshold) {
     return "Critical";
   }
 
-  if (freeMemoryRatio < 0.15) {
+  if (value > warningThreshold) {
     return "Warning";
   }
 
   return "Healthy";
 }
 
-function getServerOverview(): ServerOverview {
+function summarizeHealth(...statuses: HealthStatus[]) {
+  const health: HealthStatus = statuses.includes("Critical")
+    ? "Critical"
+    : statuses.includes("Warning")
+      ? "Warning"
+      : "Healthy";
+
   return {
-    hostname: os.hostname(),
-    operatingSystem: os.type(),
-    kernel: os.release(),
-    platform: os.platform(),
-    uptimeSeconds: Math.floor(os.uptime()),
-    currentTime: new Date().toISOString(),
-    health: getServerHealth(),
+    criticalAlertCount: statuses.filter((status) => status === "Critical").length,
+    health,
+    warningAlertCount: statuses.filter((status) => status === "Warning").length,
   };
 }
 
-function getMetrics() {
-  const totalMemory = os.totalmem();
-  const freeMemory = os.freemem();
+async function getSystemSnapshot() {
+  const cpuUsagePercent = await getCpuUsagePercent();
+  const memoryUsagePercent = clampPercent(
+    Math.round(((os.totalmem() - os.freemem()) / os.totalmem()) * 100),
+  );
+  const diskUsagePercent = getDiskUsagePercent();
+  const cpuStatus = getMetricStatus(cpuUsagePercent, 80, 90);
+  const memoryStatus = getMetricStatus(memoryUsagePercent, 85, 95);
+  const diskStatus = getMetricStatus(diskUsagePercent, 80, 90);
 
   return {
+    cpuUsagePercent,
+    diskUsagePercent,
+    memoryUsagePercent,
+    ...summarizeHealth(cpuStatus, memoryStatus, diskStatus),
+  };
+}
+
+async function getServerOverview(): Promise<ServerOverview> {
+  const snapshot = await getSystemSnapshot();
+
+  return {
+    activeServiceCount: services.filter((service) => service.status === "running")
+      .length,
+    cpuUsagePercent: snapshot.cpuUsagePercent,
+    criticalAlertCount: snapshot.criticalAlertCount,
+    currentTime: new Date().toISOString(),
+    diskUsagePercent: snapshot.diskUsagePercent,
+    health: snapshot.health,
+    hostname: os.hostname(),
+    kernel: os.release(),
+    memoryUsagePercent: snapshot.memoryUsagePercent,
+    operatingSystem: os.type(),
+    platform: os.platform(),
+    runningProcessCount: getRunningProcessCount(),
+    uptimeSeconds: Math.floor(os.uptime()),
+    warningAlertCount: snapshot.warningAlertCount,
+  };
+}
+
+async function getMetrics() {
+  const totalMemory = os.totalmem();
+  const freeMemory = os.freemem();
+  const snapshot = await getSystemSnapshot();
+
+  return {
+    cpuUsagePercent: snapshot.cpuUsagePercent,
     cpuLoadAverage: os.loadavg(),
+    diskUsagePercent: snapshot.diskUsagePercent,
     freeMemory,
-    memoryUsedPercent: Math.round(((totalMemory - freeMemory) / totalMemory) * 100),
+    memoryUsedPercent: snapshot.memoryUsagePercent,
     processUptimeSeconds: Math.floor(process.uptime()),
     systemUptimeSeconds: Math.floor(os.uptime()),
     totalMemory,
@@ -432,20 +582,20 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ message: "Logged out." });
 });
 
-app.get("/api/server/overview", (req, res) => {
+app.get("/api/server/overview", async (req, res) => {
   if (!requireRole(req, res, ["admin"])) {
     return;
   }
 
-  res.json(getServerOverview());
+  res.json(await getServerOverview());
 });
 
-app.get("/api/metrics", (req, res) => {
+app.get("/api/metrics", async (req, res) => {
   if (!requireRole(req, res, ["viewer", "operator", "admin"])) {
     return;
   }
 
-  res.json(getMetrics());
+  res.json(await getMetrics());
 });
 
 app.get("/api/logs", (req, res) => {

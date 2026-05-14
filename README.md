@@ -62,6 +62,20 @@ operator  Metrics, logs, and process restarts
 admin     Metrics, logs, process restarts, users, alerts, and system actions
 ```
 
+## Server Overview
+
+The admin overview shows compact cards for CPU, memory, disk, uptime, hostname,
+operating system, kernel, health, running process count, active service count,
+and warning/critical alert counts.
+
+Health thresholds:
+
+```txt
+CPU    > 80% warning, > 90% critical
+Memory > 85% warning, > 95% critical
+Disk   > 80% warning, > 90% critical
+```
+
 ## Environment
 
 Optional local env files:

@@ -26,17 +26,26 @@ type SessionResponse = {
 };
 
 type ServerOverview = {
-  hostname: string;
-  operatingSystem: string;
-  kernel: string;
-  platform: string;
-  uptimeSeconds: number;
+  activeServiceCount: number;
+  cpuUsagePercent: number;
+  criticalAlertCount: number;
   currentTime: string;
+  diskUsagePercent: number;
   health: "Healthy" | "Warning" | "Critical";
+  hostname: string;
+  kernel: string;
+  memoryUsagePercent: number;
+  operatingSystem: string;
+  platform: string;
+  runningProcessCount: number;
+  uptimeSeconds: number;
+  warningAlertCount: number;
 };
 
 type Metrics = {
   cpuLoadAverage: number[];
+  cpuUsagePercent: number;
+  diskUsagePercent: number;
   freeMemory: number;
   memoryUsedPercent: number;
   processUptimeSeconds: number;
@@ -583,19 +592,36 @@ function ServerOverviewPanel({ apiRequest }: { apiRequest: ApiRequest }) {
       </div>
 
       {overview ? (
-        <dl className="detail-list">
-          <Detail
-            className={getHealthClass(overview.health)}
-            label="Health"
-            value={overview.health}
-          />
-          <Detail label="Hostname" value={overview.hostname} />
-          <Detail label="Operating system" value={overview.operatingSystem} />
-          <Detail label="Platform" value={overview.platform} />
-          <Detail label="Kernel" value={overview.kernel} />
-          <Detail label="Uptime" value={formatUptime(overview.uptimeSeconds)} />
-          <Detail label="Current time" value={formatDateTime(overview.currentTime)} />
-        </dl>
+        <>
+          <div className="card-grid">
+            <StatCard
+              className={getHealthClass(overview.health)}
+              label="Health"
+              value={overview.health}
+            />
+            <StatCard label="CPU" value={`${overview.cpuUsagePercent}%`} />
+            <StatCard label="Memory" value={`${overview.memoryUsagePercent}%`} />
+            <StatCard label="Disk" value={`${overview.diskUsagePercent}%`} />
+            <StatCard label="Uptime" value={formatUptime(overview.uptimeSeconds)} />
+            <StatCard label="Processes" value={String(overview.runningProcessCount)} />
+            <StatCard label="Services" value={String(overview.activeServiceCount)} />
+            <StatCard
+              label="Alerts"
+              value={`${overview.warningAlertCount} warning / ${overview.criticalAlertCount} critical`}
+            />
+          </div>
+
+          <dl className="detail-list compact-details">
+            <Detail label="Hostname" value={overview.hostname} />
+            <Detail label="Operating system" value={overview.operatingSystem} />
+            <Detail label="Platform" value={overview.platform} />
+            <Detail label="Kernel" value={overview.kernel} />
+            <Detail
+              label="Current time"
+              value={formatDateTime(overview.currentTime)}
+            />
+          </dl>
+        </>
       ) : (
         <p className="description">
           {loading ? "Loading server details..." : "Server details are not loaded yet."}
@@ -604,6 +630,23 @@ function ServerOverviewPanel({ apiRequest }: { apiRequest: ApiRequest }) {
 
       {error && <p className="error">{error}</p>}
     </section>
+  );
+}
+
+function StatCard({
+  className = "",
+  label,
+  value,
+}: {
+  className?: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="stat-card">
+      <dt>{label}</dt>
+      <dd className={className}>{value}</dd>
+    </div>
   );
 }
 
@@ -640,12 +683,14 @@ function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
 
       {metrics && (
         <dl className="detail-list">
+          <Detail label="CPU usage" value={`${metrics.cpuUsagePercent}%`} />
+          <Detail label="CPU load" value={metrics.cpuLoadAverage.map(round).join(", ")} />
           <Detail label="Memory used" value={`${metrics.memoryUsedPercent}%`} />
+          <Detail label="Disk used" value={`${metrics.diskUsagePercent}%`} />
           <Detail label="Free memory" value={formatBytes(metrics.freeMemory)} />
           <Detail label="Total memory" value={formatBytes(metrics.totalMemory)} />
           <Detail label="System uptime" value={formatUptime(metrics.systemUptimeSeconds)} />
           <Detail label="Process uptime" value={formatUptime(metrics.processUptimeSeconds)} />
-          <Detail label="CPU load" value={metrics.cpuLoadAverage.map(round).join(", ")} />
         </dl>
       )}
 
