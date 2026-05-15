@@ -42,15 +42,34 @@ type ServerOverview = {
   warningAlertCount: number;
 };
 
-type Metrics = {
-  cpuLoadAverage: number[];
+type HealthStatus = "Healthy" | "Warning" | "Critical";
+
+type CpuThresholds = {
+  warning: number;
+  critical: number;
+};
+
+type CpuProcess = {
+  command: string;
   cpuUsagePercent: number;
-  diskUsagePercent: number;
-  freeMemory: number;
-  memoryUsedPercent: number;
-  processUptimeSeconds: number;
-  systemUptimeSeconds: number;
-  totalMemory: number;
+  id: string;
+  memoryUsagePercent: number;
+  name: string;
+  pid: number;
+  status: string;
+  user: string;
+};
+
+type CpuMetrics = {
+  cpuUsagePercent: number;
+  loadAverage: number[];
+  perCoreUsage: Array<{
+    core: number;
+    usagePercent: number;
+  }>;
+  status: HealthStatus;
+  thresholds: CpuThresholds;
+  topProcesses: CpuProcess[];
 };
 
 type LogEntry = {
@@ -63,7 +82,7 @@ type LogEntry = {
 type ProcessRecord = {
   id: string;
   name: string;
-  status: "running" | "restarting";
+  status: string;
   lastRestartedAt: string | null;
 };
 
@@ -651,14 +670,14 @@ function StatCard({
 }
 
 function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
-  const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [metrics, setMetrics] = useState<CpuMetrics | null>(null);
   const [error, setError] = useState("");
 
   async function loadMetrics() {
     setError("");
 
     try {
-      const data = await apiRequest<Metrics>("/api/metrics");
+      const data = await apiRequest<CpuMetrics>("/api/metrics/cpu");
 
       if (data) {
         setMetrics(data);
@@ -675,23 +694,81 @@ function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
   return (
     <section className="panel">
       <div className="panel-heading">
-        <h2>Metrics</h2>
+        <h2>CPU Monitoring</h2>
         <button className="secondary" onClick={loadMetrics}>
           Refresh
         </button>
       </div>
 
       {metrics && (
-        <dl className="detail-list">
-          <Detail label="CPU usage" value={`${metrics.cpuUsagePercent}%`} />
-          <Detail label="CPU load" value={metrics.cpuLoadAverage.map(round).join(", ")} />
-          <Detail label="Memory used" value={`${metrics.memoryUsedPercent}%`} />
-          <Detail label="Disk used" value={`${metrics.diskUsagePercent}%`} />
-          <Detail label="Free memory" value={formatBytes(metrics.freeMemory)} />
-          <Detail label="Total memory" value={formatBytes(metrics.totalMemory)} />
-          <Detail label="System uptime" value={formatUptime(metrics.systemUptimeSeconds)} />
-          <Detail label="Process uptime" value={formatUptime(metrics.processUptimeSeconds)} />
-        </dl>
+        <div className="metrics-stack">
+          <div className="card-grid">
+            <StatCard
+              className={getHealthClass(metrics.status)}
+              label="CPU usage"
+              value={`${round(metrics.cpuUsagePercent)}%`}
+            />
+            <StatCard
+              label="Load average"
+              value={metrics.loadAverage.map(round).join(", ")}
+            />
+            <StatCard label="Status" value={metrics.status} className={getHealthClass(metrics.status)} />
+          </div>
+
+          <section>
+            <h3>Per-core usage</h3>
+            <div className="core-list">
+              {metrics.perCoreUsage.map((core) => (
+                <div className="core-row" key={core.core}>
+                  <span>Core {core.core + 1}</span>
+                  <div className="meter" aria-label={`Core ${core.core + 1} CPU usage`}>
+                    <span
+                      className={`meter-fill ${getCpuUsageClass(
+                        core.usagePercent,
+                        metrics.thresholds,
+                      )}`}
+                      style={{ width: `${clampPercent(core.usagePercent)}%` }}
+                    />
+                  </div>
+                  <strong>{round(core.usagePercent)}%</strong>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h3>Top CPU Processes</h3>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>PID</th>
+                    <th>Name</th>
+                    <th>User</th>
+                    <th>CPU</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {metrics.topProcesses.map((processRecord) => (
+                    <tr key={processRecord.id}>
+                      <td>{processRecord.pid}</td>
+                      <td>{processRecord.name}</td>
+                      <td>{processRecord.user}</td>
+                      <td
+                        className={getCpuUsageClass(
+                          processRecord.cpuUsagePercent,
+                          metrics.thresholds,
+                        )}
+                      >
+                        {round(processRecord.cpuUsagePercent)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
       )}
 
       {error && <p className="error">{error}</p>}
@@ -1056,16 +1133,32 @@ function formatDateTime(value: string) {
   }).format(date);
 }
 
-function formatBytes(value: number) {
-  return `${Math.round(value / 1024 / 1024)} MB`;
-}
-
 function round(value: number) {
   return String(Math.round(value * 100) / 100);
 }
 
-function getHealthClass(health: ServerOverview["health"]) {
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.min(100, Math.max(0, value));
+}
+
+function getHealthClass(health: HealthStatus) {
   return `health-${health.toLowerCase()}`;
+}
+
+function getCpuUsageClass(value: number, threshold: CpuThresholds) {
+  if (value > threshold.critical) {
+    return "health-critical";
+  }
+
+  if (value > threshold.warning) {
+    return "health-warning";
+  }
+
+  return "health-healthy";
 }
 
 export default App;

@@ -76,6 +76,11 @@ h2 {
   font-size: 22px;
 }
 
+h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
 .description {
   margin: 16px 0 0;
   color: #475569;
@@ -234,6 +239,73 @@ h2 {
   margin-top: 20px;
 }
 
+.metrics-stack {
+  display: grid;
+  gap: 24px;
+}
+
+.core-list {
+  display: grid;
+  gap: 10px;
+}
+
+.core-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 56px;
+  align-items: center;
+  gap: 12px;
+  color: #334155;
+  font-size: 14px;
+}
+
+.core-row strong {
+  text-align: right;
+}
+
+.meter {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #047857;
+}
+
+.meter-fill.health-warning {
+  background: #b45309;
+}
+
+.meter-fill.health-critical {
+  background: #b91c1c;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th,
+td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+th {
+  color: #64748b;
+  font-size: 13px;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -321,5 +393,14 @@ h2 {
   .inline-actions,
   .inline-actions button {
     width: 100%;
+  }
+
+  .core-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .core-row strong {
+    text-align: left;
   }
 }
