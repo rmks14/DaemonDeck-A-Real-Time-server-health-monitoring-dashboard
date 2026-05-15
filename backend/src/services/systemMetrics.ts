@@ -138,6 +138,33 @@ export async function getServerOverview(): Promise<ServerOverview> {
   };
 }
 
+export async function getCpuMetrics() {
+  const [load, processList] = await Promise.all([
+    si.currentLoad(),
+    getProcesses(),
+  ]);
+  const cpuUsagePercent = roundPercent(load.currentLoad);
+  const status = getMetricStatus(
+    cpuUsagePercent,
+    thresholds.cpu.warning,
+    thresholds.cpu.critical,
+  );
+
+  return {
+    cpuUsagePercent,
+    loadAverage: os.loadavg(),
+    perCoreUsage: load.cpus.map((core, index) => ({
+      core: index,
+      usagePercent: roundPercent(core.load),
+    })),
+    status,
+    thresholds: thresholds.cpu,
+    topProcesses: [...processList]
+      .sort((a, b) => b.cpuUsagePercent - a.cpuUsagePercent)
+      .slice(0, 5),
+  };
+}
+
 export async function getMetrics() {
   const [snapshot, osInfo, processList] = await Promise.all([
     getSystemSnapshot(),
