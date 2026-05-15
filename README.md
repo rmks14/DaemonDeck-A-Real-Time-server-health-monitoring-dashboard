@@ -4,7 +4,7 @@ A small React and Express starter with demo login, JWT auth, protected dashboard
 
 ## What It Uses
 
-- `backend` - Express, TypeScript, signed expiring JWT auth
+- `backend` - Express, TypeScript, signed expiring JWT auth, real system metrics via `systeminformation`
 - `frontend` - React, TypeScript, Vite
 
 Demo users:
