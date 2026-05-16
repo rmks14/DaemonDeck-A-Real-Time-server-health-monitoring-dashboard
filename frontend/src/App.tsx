@@ -44,12 +44,12 @@ type ServerOverview = {
 
 type HealthStatus = "Healthy" | "Warning" | "Critical";
 
-type CpuThresholds = {
+type UsageThresholds = {
   warning: number;
   critical: number;
 };
 
-type CpuProcess = {
+type MetricProcess = {
   command: string;
   cpuUsagePercent: number;
   id: string;
@@ -68,8 +68,23 @@ type CpuMetrics = {
     usagePercent: number;
   }>;
   status: HealthStatus;
-  thresholds: CpuThresholds;
-  topProcesses: CpuProcess[];
+  thresholds: UsageThresholds;
+  topProcesses: MetricProcess[];
+};
+
+type MemoryMetrics = {
+  availableMemory: number;
+  freeMemory: number;
+  memoryUsagePercent: number;
+  status: HealthStatus;
+  swapFree: number;
+  swapTotal: number;
+  swapUsagePercent: number;
+  swapUsed: number;
+  thresholds: UsageThresholds;
+  topProcesses: MetricProcess[];
+  totalMemory: number;
+  usedMemory: number;
 };
 
 type LogEntry = {
@@ -670,17 +685,25 @@ function StatCard({
 }
 
 function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
-  const [metrics, setMetrics] = useState<CpuMetrics | null>(null);
+  const [cpuMetrics, setCpuMetrics] = useState<CpuMetrics | null>(null);
+  const [memoryMetrics, setMemoryMetrics] = useState<MemoryMetrics | null>(null);
   const [error, setError] = useState("");
 
   async function loadMetrics() {
     setError("");
 
     try {
-      const data = await apiRequest<CpuMetrics>("/api/metrics/cpu");
+      const [cpuData, memoryData] = await Promise.all([
+        apiRequest<CpuMetrics>("/api/metrics/cpu"),
+        apiRequest<MemoryMetrics>("/api/metrics/memory"),
+      ]);
 
-      if (data) {
-        setMetrics(data);
+      if (cpuData) {
+        setCpuMetrics(cpuData);
+      }
+
+      if (memoryData) {
+        setMemoryMetrics(memoryData);
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not load metrics.");
@@ -694,85 +717,198 @@ function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
   return (
     <section className="panel">
       <div className="panel-heading">
-        <h2>CPU Monitoring</h2>
+        <h2>System Metrics</h2>
         <button className="secondary" onClick={loadMetrics}>
           Refresh
         </button>
       </div>
 
-      {metrics && (
+      {(cpuMetrics || memoryMetrics) && (
         <div className="metrics-stack">
-          <div className="card-grid">
-            <StatCard
-              className={getHealthClass(metrics.status)}
-              label="CPU usage"
-              value={`${round(metrics.cpuUsagePercent)}%`}
-            />
-            <StatCard
-              label="Load average"
-              value={metrics.loadAverage.map(round).join(", ")}
-            />
-            <StatCard label="Status" value={metrics.status} className={getHealthClass(metrics.status)} />
-          </div>
+          {cpuMetrics && (
+            <>
+              <section>
+                <h3>CPU Monitoring</h3>
+                <div className="card-grid">
+                  <StatCard
+                    className={getHealthClass(cpuMetrics.status)}
+                    label="CPU usage"
+                    value={`${round(cpuMetrics.cpuUsagePercent)}%`}
+                  />
+                  <StatCard
+                    label="Load average"
+                    value={cpuMetrics.loadAverage.map(round).join(", ")}
+                  />
+                  <StatCard
+                    className={getHealthClass(cpuMetrics.status)}
+                    label="Status"
+                    value={cpuMetrics.status}
+                  />
+                </div>
+              </section>
 
-          <section>
-            <h3>Per-core usage</h3>
-            <div className="core-list">
-              {metrics.perCoreUsage.map((core) => (
-                <div className="core-row" key={core.core}>
-                  <span>Core {core.core + 1}</span>
-                  <div className="meter" aria-label={`Core ${core.core + 1} CPU usage`}>
+              <section>
+                <h3>Per-core usage</h3>
+                <div className="core-list">
+                  {cpuMetrics.perCoreUsage.map((core) => (
+                    <div className="core-row" key={core.core}>
+                      <span>Core {core.core + 1}</span>
+                      <div className="meter" aria-label={`Core ${core.core + 1} CPU usage`}>
+                        <span
+                          className={`meter-fill ${getUsageClass(
+                            core.usagePercent,
+                            cpuMetrics.thresholds,
+                          )}`}
+                          style={{ width: `${clampPercent(core.usagePercent)}%` }}
+                        />
+                      </div>
+                      <strong>{round(core.usagePercent)}%</strong>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <h3>Top CPU Processes</h3>
+                <MetricProcessTable
+                  processes={cpuMetrics.topProcesses}
+                  thresholds={cpuMetrics.thresholds}
+                  valueKey="cpuUsagePercent"
+                  valueLabel="CPU"
+                />
+              </section>
+            </>
+          )}
+
+          {memoryMetrics && (
+            <>
+              <section>
+                <h3>Memory Monitoring</h3>
+                <div className="card-grid">
+                  <StatCard
+                    className={getHealthClass(memoryMetrics.status)}
+                    label="Memory usage"
+                    value={`${round(memoryMetrics.memoryUsagePercent)}%`}
+                  />
+                  <StatCard
+                    label="Used"
+                    value={formatBytes(memoryMetrics.usedMemory)}
+                  />
+                  <StatCard
+                    label="Free"
+                    value={formatBytes(memoryMetrics.freeMemory)}
+                  />
+                  <StatCard
+                    label="Status"
+                    value={memoryMetrics.status}
+                    className={getHealthClass(memoryMetrics.status)}
+                  />
+                </div>
+              </section>
+
+              <section>
+                <h3>Used/free memory</h3>
+                <div className="memory-meter">
+                  <div className="meter" aria-label="Memory usage">
                     <span
-                      className={`meter-fill ${getCpuUsageClass(
-                        core.usagePercent,
-                        metrics.thresholds,
+                      className={`meter-fill ${getUsageClass(
+                        memoryMetrics.memoryUsagePercent,
+                        memoryMetrics.thresholds,
                       )}`}
-                      style={{ width: `${clampPercent(core.usagePercent)}%` }}
+                      style={{ width: `${clampPercent(memoryMetrics.memoryUsagePercent)}%` }}
                     />
                   </div>
-                  <strong>{round(core.usagePercent)}%</strong>
+                  <p className="muted">
+                    {formatBytes(memoryMetrics.usedMemory)} used /{" "}
+                    {formatBytes(memoryMetrics.totalMemory)} total
+                  </p>
                 </div>
-              ))}
-            </div>
-          </section>
+              </section>
 
-          <section>
-            <h3>Top CPU Processes</h3>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>PID</th>
-                    <th>Name</th>
-                    <th>User</th>
-                    <th>CPU</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {metrics.topProcesses.map((processRecord) => (
-                    <tr key={processRecord.id}>
-                      <td>{processRecord.pid}</td>
-                      <td>{processRecord.name}</td>
-                      <td>{processRecord.user}</td>
-                      <td
-                        className={getCpuUsageClass(
-                          processRecord.cpuUsagePercent,
-                          metrics.thresholds,
-                        )}
-                      >
-                        {round(processRecord.cpuUsagePercent)}%
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+              <section>
+                <h3>Swap usage</h3>
+                <div className="card-grid">
+                  <StatCard
+                    label="Swap used"
+                    value={
+                      memoryMetrics.swapTotal > 0
+                        ? `${round(memoryMetrics.swapUsagePercent)}%`
+                        : "Not configured"
+                    }
+                  />
+                  <StatCard
+                    label="Swap detail"
+                    value={
+                      memoryMetrics.swapTotal > 0
+                        ? `${formatBytes(memoryMetrics.swapUsed)} / ${formatBytes(
+                            memoryMetrics.swapTotal,
+                          )}`
+                        : "-"
+                    }
+                  />
+                </div>
+              </section>
+
+              <section>
+                <h3>Top Memory Processes</h3>
+                <MetricProcessTable
+                  processes={memoryMetrics.topProcesses}
+                  thresholds={memoryMetrics.thresholds}
+                  valueKey="memoryUsagePercent"
+                  valueLabel="Memory"
+                />
+              </section>
+            </>
+          )}
         </div>
       )}
 
       {error && <p className="error">{error}</p>}
     </section>
+  );
+}
+
+function MetricProcessTable({
+  processes,
+  thresholds,
+  valueKey,
+  valueLabel,
+}: {
+  processes: MetricProcess[];
+  thresholds: UsageThresholds;
+  valueKey: "cpuUsagePercent" | "memoryUsagePercent";
+  valueLabel: string;
+}) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>PID</th>
+            <th>Name</th>
+            <th>User</th>
+            <th>{valueLabel}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {processes.map((processRecord) => (
+            <tr key={processRecord.id}>
+              <td>{processRecord.pid}</td>
+              <td>{processRecord.name}</td>
+              <td>{processRecord.user}</td>
+              <td
+                className={getUsageClass(
+                  processRecord[valueKey],
+                  thresholds,
+                )}
+              >
+                {round(processRecord[valueKey])}%
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -1133,6 +1269,10 @@ function formatDateTime(value: string) {
   }).format(date);
 }
 
+function formatBytes(value: number) {
+  return `${Math.round(value / 1024 / 1024)} MB`;
+}
+
 function round(value: number) {
   return String(Math.round(value * 100) / 100);
 }
@@ -1149,7 +1289,7 @@ function getHealthClass(health: HealthStatus) {
   return `health-${health.toLowerCase()}`;
 }
 
-function getCpuUsageClass(value: number, threshold: CpuThresholds) {
+function getUsageClass(value: number, threshold: UsageThresholds) {
   if (value > threshold.critical) {
     return "health-critical";
   }

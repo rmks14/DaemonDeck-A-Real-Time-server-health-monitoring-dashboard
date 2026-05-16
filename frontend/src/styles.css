@@ -284,6 +284,15 @@ h3 {
   background: #b91c1c;
 }
 
+.memory-meter {
+  display: grid;
+  gap: 8px;
+}
+
+.memory-meter .meter {
+  height: 14px;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
