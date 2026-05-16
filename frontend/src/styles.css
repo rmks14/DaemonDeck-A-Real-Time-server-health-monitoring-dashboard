@@ -42,6 +42,14 @@ button.secondary:hover {
   background: #cbd5e1;
 }
 
+button.danger {
+  background: #b91c1c;
+}
+
+button.danger:hover {
+  background: #991b1b;
+}
+
 .page {
   min-height: 100vh;
   display: grid;
@@ -292,6 +300,12 @@ h3 {
 
 .memory-meter .meter {
   height: 14px;
+}
+
+.chart-panel {
+  width: 100%;
+  min-height: 220px;
+  padding: 8px 0 0;
 }
 
 .table-wrap {

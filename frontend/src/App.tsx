@@ -1,4 +1,6 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
+
+const MetricTrendChart = lazy(() => import("./MetricTrendChart"));
 
 const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const tokenStorageKey = "simple-auth-token";
@@ -106,6 +108,13 @@ type DiskMetrics = {
   total: number;
   usagePercent: number;
   used: number;
+};
+
+type TrendPoint = {
+  cpu: number;
+  disk: number;
+  memory: number;
+  time: string;
 };
 
 type LogEntry = {
@@ -538,7 +547,9 @@ function DashboardPage({
           />
         )}
         {route === "/dashboard/metrics" && <MetricsPanel apiRequest={apiRequest} />}
-        {route === "/dashboard/processes" && <ProcessesPanel apiRequest={apiRequest} />}
+        {route === "/dashboard/processes" && (
+          <ProcessesPanel apiRequest={apiRequest} user={user} />
+        )}
         {route === "/dashboard/logs" && <LogsPanel apiRequest={apiRequest} />}
         {route === "/dashboard/admin" && canAdmin && (
           <AdminPanel apiRequest={apiRequest} currentUser={user} />
@@ -580,7 +591,7 @@ function OverviewPanel({
         </dl>
       </section>
 
-      {user.role === "admin" && <ServerOverviewPanel apiRequest={apiRequest} />}
+      <ServerOverviewPanel apiRequest={apiRequest} />
 
       <section className="panel">
         <h2>Session</h2>
@@ -710,6 +721,7 @@ function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
   const [cpuMetrics, setCpuMetrics] = useState<CpuMetrics | null>(null);
   const [memoryMetrics, setMemoryMetrics] = useState<MemoryMetrics | null>(null);
   const [diskMetrics, setDiskMetrics] = useState<DiskMetrics | null>(null);
+  const [history, setHistory] = useState<TrendPoint[]>([]);
   const [error, setError] = useState("");
 
   async function loadMetrics() {
@@ -733,6 +745,22 @@ function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
       if (diskData) {
         setDiskMetrics(diskData);
       }
+
+      if (cpuData && memoryData && diskData) {
+        setHistory((current) => [
+          ...current.slice(-19),
+          {
+            cpu: cpuData.cpuUsagePercent,
+            disk: diskData.usagePercent,
+            memory: memoryData.memoryUsagePercent,
+            time: new Intl.DateTimeFormat(undefined, {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            }).format(new Date()),
+          },
+        ]);
+      }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not load metrics.");
     }
@@ -753,6 +781,15 @@ function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
 
       {(cpuMetrics || memoryMetrics || diskMetrics) && (
         <div className="metrics-stack">
+          {history.length > 0 && (
+            <section>
+              <h3>Usage trends</h3>
+              <Suspense fallback={<p className="muted">Loading chart...</p>}>
+                <MetricTrendChart data={history} />
+              </Suspense>
+            </section>
+          )}
+
           {cpuMetrics && (
             <>
               <section>
@@ -1053,11 +1090,19 @@ function LogsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
   );
 }
 
-function ProcessesPanel({ apiRequest }: { apiRequest: ApiRequest }) {
+function ProcessesPanel({
+  apiRequest,
+  user,
+}: {
+  apiRequest: ApiRequest;
+  user: User;
+}) {
   const [processes, setProcesses] = useState<ProcessRecord[]>([]);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"cpu" | "memory">("cpu");
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const canManageProcesses = user.role === "operator" || user.role === "admin";
   const visibleProcesses = [...processes]
     .filter((processRecord) =>
       processRecord.name.toLowerCase().includes(search.trim().toLowerCase()),
@@ -1070,6 +1115,7 @@ function ProcessesPanel({ apiRequest }: { apiRequest: ApiRequest }) {
 
   async function loadProcesses() {
     setError("");
+    setMessage("");
 
     try {
       const data = await apiRequest<{ processes: ProcessRecord[] }>("/api/processes");
@@ -1079,6 +1125,29 @@ function ProcessesPanel({ apiRequest }: { apiRequest: ApiRequest }) {
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not load processes.");
+    }
+  }
+
+  async function killProcess(processRecord: ProcessRecord) {
+    if (!window.confirm(`Stop ${processRecord.name} (${processRecord.pid})?`)) {
+      return;
+    }
+
+    setError("");
+    setMessage("");
+
+    try {
+      const data = await apiRequest<{ message: string }>(
+        `/api/processes/${processRecord.pid}`,
+        { method: "DELETE" },
+      );
+
+      if (data) {
+        setMessage(data.message);
+        await loadProcesses();
+      }
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not stop process.");
     }
   }
 
@@ -1094,6 +1163,11 @@ function ProcessesPanel({ apiRequest }: { apiRequest: ApiRequest }) {
           Refresh
         </button>
       </div>
+      <p className="description">
+        {canManageProcesses
+          ? "Operator actions are available for running processes."
+          : "Viewer access is read-only."}
+      </p>
 
       <div className="table-controls">
         <input
@@ -1123,6 +1197,7 @@ function ProcessesPanel({ apiRequest }: { apiRequest: ApiRequest }) {
               <th>Memory</th>
               <th>User</th>
               <th>Status</th>
+              {canManageProcesses && <th>Action</th>}
             </tr>
           </thead>
           <tbody>
@@ -1134,6 +1209,16 @@ function ProcessesPanel({ apiRequest }: { apiRequest: ApiRequest }) {
                 <td>{round(processRecord.memoryUsagePercent)}%</td>
                 <td>{processRecord.user}</td>
                 <td>{processRecord.status}</td>
+                {canManageProcesses && (
+                  <td>
+                    <button
+                      className="danger"
+                      onClick={() => void killProcess(processRecord)}
+                    >
+                      Kill
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -1143,6 +1228,7 @@ function ProcessesPanel({ apiRequest }: { apiRequest: ApiRequest }) {
       {visibleProcesses.length === 0 && !error && (
         <p className="description">No matching processes.</p>
       )}
+      {message && <p className="success">{message}</p>}
       {error && <p className="error">{error}</p>}
     </section>
   );
