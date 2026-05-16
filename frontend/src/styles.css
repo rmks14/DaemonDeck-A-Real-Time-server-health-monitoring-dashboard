@@ -10,7 +10,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -297,6 +298,27 @@ h3 {
   overflow-x: auto;
 }
 
+.table-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.table-controls input,
+.table-controls select {
+  min-height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: #172026;
+  background: white;
+}
+
+.table-controls input {
+  flex: 1 1 240px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -313,6 +335,14 @@ td {
 th {
   color: #64748b;
   font-size: 13px;
+}
+
+.row-warning {
+  background: #fffbeb;
+}
+
+.row-critical {
+  background: #fef2f2;
 }
 
 .row {
@@ -401,6 +431,11 @@ th {
 
   .inline-actions,
   .inline-actions button {
+    width: 100%;
+  }
+
+  .table-controls input,
+  .table-controls select {
     width: 100%;
   }
 

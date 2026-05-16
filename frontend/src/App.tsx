@@ -87,6 +87,27 @@ type MemoryMetrics = {
   usedMemory: number;
 };
 
+type DiskPartition = {
+  available: number;
+  filesystem: string;
+  mount: string;
+  status: HealthStatus;
+  total: number;
+  type: string;
+  usagePercent: number;
+  used: number;
+};
+
+type DiskMetrics = {
+  available: number;
+  partitions: DiskPartition[];
+  status: HealthStatus;
+  thresholds: UsageThresholds;
+  total: number;
+  usagePercent: number;
+  used: number;
+};
+
 type LogEntry = {
   id: string;
   level: "info" | "warning" | "critical";
@@ -95,9 +116,14 @@ type LogEntry = {
 };
 
 type ProcessRecord = {
+  cpuUsagePercent: number;
   id: string;
+  memoryUsagePercent: number;
   name: string;
+  pid: number;
+  startTime: string;
   status: string;
+  user: string;
   lastRestartedAt: string | null;
 };
 
@@ -458,19 +484,18 @@ function DashboardPage({
   sessionExpiresAt: string;
   user: User;
 }) {
-  const canOperate = user.role === "operator" || user.role === "admin";
   const canAdmin = user.role === "admin";
   const knownRoute =
     route === "/dashboard" ||
     route === "/dashboard/metrics" ||
     route === "/dashboard/logs" ||
-    route === "/dashboard/operations" ||
+    route === "/dashboard/processes" ||
     route === "/dashboard/admin";
   const tabs = [
     { label: "Overview", path: "/dashboard" },
     { label: "Metrics", path: "/dashboard/metrics" },
+    { label: "Processes", path: "/dashboard/processes" },
     { label: "Logs", path: "/dashboard/logs" },
-    ...(canOperate ? [{ label: "Operations", path: "/dashboard/operations" }] : []),
     ...(canAdmin ? [{ label: "Admin", path: "/dashboard/admin" }] : []),
   ];
 
@@ -513,15 +538,12 @@ function DashboardPage({
           />
         )}
         {route === "/dashboard/metrics" && <MetricsPanel apiRequest={apiRequest} />}
+        {route === "/dashboard/processes" && <ProcessesPanel apiRequest={apiRequest} />}
         {route === "/dashboard/logs" && <LogsPanel apiRequest={apiRequest} />}
-        {route === "/dashboard/operations" && canOperate && (
-          <OperationsPanel apiRequest={apiRequest} />
-        )}
         {route === "/dashboard/admin" && canAdmin && (
           <AdminPanel apiRequest={apiRequest} currentUser={user} />
         )}
-        {((route === "/dashboard/operations" && !canOperate) ||
-          (route === "/dashboard/admin" && !canAdmin)) && (
+        {route === "/dashboard/admin" && !canAdmin && (
           <MessagePanel message="You do not have permission to view this section." />
         )}
         {!knownRoute && <MessagePanel message="Dashboard section was not found." />}
@@ -687,15 +709,17 @@ function StatCard({
 function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
   const [cpuMetrics, setCpuMetrics] = useState<CpuMetrics | null>(null);
   const [memoryMetrics, setMemoryMetrics] = useState<MemoryMetrics | null>(null);
+  const [diskMetrics, setDiskMetrics] = useState<DiskMetrics | null>(null);
   const [error, setError] = useState("");
 
   async function loadMetrics() {
     setError("");
 
     try {
-      const [cpuData, memoryData] = await Promise.all([
+      const [cpuData, memoryData, diskData] = await Promise.all([
         apiRequest<CpuMetrics>("/api/metrics/cpu"),
         apiRequest<MemoryMetrics>("/api/metrics/memory"),
+        apiRequest<DiskMetrics>("/api/metrics/disk"),
       ]);
 
       if (cpuData) {
@@ -704,6 +728,10 @@ function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
 
       if (memoryData) {
         setMemoryMetrics(memoryData);
+      }
+
+      if (diskData) {
+        setDiskMetrics(diskData);
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not load metrics.");
@@ -723,7 +751,7 @@ function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
         </button>
       </div>
 
-      {(cpuMetrics || memoryMetrics) && (
+      {(cpuMetrics || memoryMetrics || diskMetrics) && (
         <div className="metrics-stack">
           {cpuMetrics && (
             <>
@@ -860,6 +888,75 @@ function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
               </section>
             </>
           )}
+
+          {diskMetrics && (
+            <>
+              <section>
+                <h3>Disk Monitoring</h3>
+                <div className="card-grid">
+                  <StatCard
+                    className={getHealthClass(diskMetrics.status)}
+                    label="Disk usage"
+                    value={`${round(diskMetrics.usagePercent)}%`}
+                  />
+                  <StatCard label="Used" value={formatBytes(diskMetrics.used)} />
+                  <StatCard
+                    label="Available"
+                    value={formatBytes(diskMetrics.available)}
+                  />
+                  <StatCard
+                    className={getHealthClass(diskMetrics.status)}
+                    label="Status"
+                    value={diskMetrics.status}
+                  />
+                </div>
+              </section>
+
+              <section>
+                <h3>Mounted partitions</h3>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Mount</th>
+                        <th>Filesystem</th>
+                        <th>Total</th>
+                        <th>Used</th>
+                        <th>Available</th>
+                        <th>Usage</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {diskMetrics.partitions.map((partition) => (
+                        <tr
+                          className={`row-${partition.status.toLowerCase()}`}
+                          key={`${partition.filesystem}-${partition.mount}`}
+                        >
+                          <td>{partition.mount}</td>
+                          <td>{partition.filesystem || partition.type}</td>
+                          <td>{formatBytes(partition.total)}</td>
+                          <td>{formatBytes(partition.used)}</td>
+                          <td>{formatBytes(partition.available)}</td>
+                          <td
+                            className={getUsageClass(
+                              partition.usagePercent,
+                              diskMetrics.thresholds,
+                            )}
+                          >
+                            {round(partition.usagePercent)}%
+                          </td>
+                          <td className={getHealthClass(partition.status)}>
+                            {partition.status}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </>
+          )}
         </div>
       )}
 
@@ -956,10 +1053,20 @@ function LogsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
   );
 }
 
-function OperationsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
+function ProcessesPanel({ apiRequest }: { apiRequest: ApiRequest }) {
   const [processes, setProcesses] = useState<ProcessRecord[]>([]);
-  const [message, setMessage] = useState("");
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"cpu" | "memory">("cpu");
   const [error, setError] = useState("");
+  const visibleProcesses = [...processes]
+    .filter((processRecord) =>
+      processRecord.name.toLowerCase().includes(search.trim().toLowerCase()),
+    )
+    .sort((a, b) =>
+      sortBy === "cpu"
+        ? b.cpuUsagePercent - a.cpuUsagePercent
+        : b.memoryUsagePercent - a.memoryUsagePercent,
+    );
 
   async function loadProcesses() {
     setError("");
@@ -975,24 +1082,6 @@ function OperationsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
     }
   }
 
-  async function restartProcess(processId: string) {
-    setError("");
-    setMessage("");
-
-    try {
-      const data = await apiRequest<{ message: string }>("/api/processes/" + processId + "/restart", {
-        method: "POST",
-      });
-
-      if (data) {
-        setMessage(data.message);
-        await loadProcesses();
-      }
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not restart process.");
-    }
-  }
-
   useEffect(() => {
     void loadProcesses();
   }, []);
@@ -1000,32 +1089,60 @@ function OperationsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
   return (
     <section className="panel">
       <div className="panel-heading">
-        <h2>Operations</h2>
+        <h2>Process Monitoring</h2>
         <button className="secondary" onClick={loadProcesses}>
           Refresh
         </button>
       </div>
 
-      <div className="stack">
-        {processes.map((processRecord) => (
-          <div className="row" key={processRecord.id}>
-            <div>
-              <strong>{processRecord.name}</strong>
-              <p className="muted">
-                {processRecord.status}
-                {processRecord.lastRestartedAt
-                  ? ` - restarted ${formatDateTime(processRecord.lastRestartedAt)}`
-                  : ""}
-              </p>
-            </div>
-            <button onClick={() => void restartProcess(processRecord.id)}>
-              Restart
-            </button>
-          </div>
-        ))}
+      <div className="table-controls">
+        <input
+          aria-label="Search processes"
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search process name"
+          type="search"
+          value={search}
+        />
+        <select
+          aria-label="Sort processes"
+          onChange={(event) => setSortBy(event.target.value as "cpu" | "memory")}
+          value={sortBy}
+        >
+          <option value="cpu">Sort by CPU</option>
+          <option value="memory">Sort by memory</option>
+        </select>
       </div>
 
-      {message && <p className="success">{message}</p>}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>PID</th>
+              <th>Name</th>
+              <th>CPU</th>
+              <th>Memory</th>
+              <th>User</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleProcesses.map((processRecord) => (
+              <tr key={processRecord.id}>
+                <td>{processRecord.pid}</td>
+                <td>{processRecord.name}</td>
+                <td>{round(processRecord.cpuUsagePercent)}%</td>
+                <td>{round(processRecord.memoryUsagePercent)}%</td>
+                <td>{processRecord.user}</td>
+                <td>{processRecord.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {visibleProcesses.length === 0 && !error && (
+        <p className="description">No matching processes.</p>
+      )}
       {error && <p className="error">{error}</p>}
     </section>
   );
