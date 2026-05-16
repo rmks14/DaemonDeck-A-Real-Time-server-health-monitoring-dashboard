@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireRole } from "../middleware/auth";
-import { getProcesses, restartProcess } from "../services/processes";
+import { getProcesses, killProcess, restartProcess } from "../services/processes";
 
 export const processesRouter = Router();
 
@@ -30,4 +30,16 @@ processesRouter.post("/processes/:id/restart", (req, res) => {
     message: `${processRecord.name} restarted.`,
     process: processRecord,
   });
+});
+
+processesRouter.delete("/processes/:id", (req, res) => {
+  const session = requireRole(req, res, ["operator", "admin"]);
+
+  if (!session) {
+    return;
+  }
+
+  const result = killProcess(req.params.id, session.user.username);
+
+  res.status(result.status).json({ message: result.message });
 });

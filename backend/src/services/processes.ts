@@ -50,6 +50,36 @@ export function restartProcess(processId: string, username: string) {
   return service;
 }
 
+export function killProcess(processId: string, username: string) {
+  const pid = Number(processId);
+
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return { message: "Process ID must be a positive integer.", status: 400 };
+  }
+
+  if (pid === process.pid) {
+    return { message: "Refusing to stop the dashboard API process.", status: 400 };
+  }
+
+  try {
+    process.kill(pid, "SIGTERM");
+    addLog(`${username} sent SIGTERM to process ${pid}`, "critical");
+
+    return { message: `Process ${pid} was sent SIGTERM.`, status: 200 };
+  } catch (caughtError) {
+    const code =
+      caughtError && typeof caughtError === "object" && "code" in caughtError
+        ? String(caughtError.code)
+        : "";
+
+    if (code === "ESRCH") {
+      return { message: "Process was not found.", status: 404 };
+    }
+
+    return { message: "Process could not be stopped.", status: 500 };
+  }
+}
+
 function roundPercent(value: number) {
   if (!Number.isFinite(value)) {
     return 0;

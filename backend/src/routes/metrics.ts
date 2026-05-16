@@ -12,7 +12,7 @@ import {
 export const metricsRouter = Router();
 
 metricsRouter.get("/server/overview", async (req, res) => {
-  if (!requireRole(req, res, ["admin"])) {
+  if (!requireRole(req, res, ["viewer", "operator", "admin"])) {
     return;
   }
 
