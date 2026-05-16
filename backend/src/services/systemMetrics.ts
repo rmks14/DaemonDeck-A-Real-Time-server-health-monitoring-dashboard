@@ -196,6 +196,32 @@ export async function getMemoryMetrics() {
   };
 }
 
+export async function getDiskMetrics() {
+  const partitions = mapDiskPartitions(await si.fsSize());
+  const diskUsagePercent = getHighestDiskUsage(partitions);
+  const status = getMetricStatus(
+    diskUsagePercent,
+    thresholds.disk.warning,
+    thresholds.disk.critical,
+  );
+  const total = partitions.reduce((sum, partition) => sum + partition.total, 0);
+  const used = partitions.reduce((sum, partition) => sum + partition.used, 0);
+  const available = partitions.reduce(
+    (sum, partition) => sum + partition.available,
+    0,
+  );
+
+  return {
+    available,
+    partitions,
+    status,
+    thresholds: thresholds.disk,
+    total,
+    usagePercent: diskUsagePercent,
+    used,
+  };
+}
+
 export async function getMetrics() {
   const [snapshot, osInfo, processList] = await Promise.all([
     getSystemSnapshot(),

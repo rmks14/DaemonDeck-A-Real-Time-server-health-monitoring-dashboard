@@ -3,6 +3,7 @@ import { activityLogs } from "../data";
 import { requireRole } from "../middleware/auth";
 import {
   getCpuMetrics,
+  getDiskMetrics,
   getMemoryMetrics,
   getMetrics,
   getServerOverview,
@@ -40,6 +41,14 @@ metricsRouter.get("/metrics/memory", async (req, res) => {
   }
 
   res.json(await getMemoryMetrics());
+});
+
+metricsRouter.get("/metrics/disk", async (req, res) => {
+  if (!requireRole(req, res, ["viewer", "operator", "admin"])) {
+    return;
+  }
+
+  res.json(await getDiskMetrics());
 });
 
 metricsRouter.get("/logs", (req, res) => {
