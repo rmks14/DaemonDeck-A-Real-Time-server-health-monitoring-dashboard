@@ -165,6 +165,37 @@ export async function getCpuMetrics() {
   };
 }
 
+export async function getMemoryMetrics() {
+  const [memory, processList] = await Promise.all([si.mem(), getProcesses()]);
+  const memoryUsagePercent = roundPercent((memory.used / memory.total) * 100);
+  const swapUsagePercent =
+    memory.swaptotal > 0
+      ? roundPercent((memory.swapused / memory.swaptotal) * 100)
+      : 0;
+  const status = getMetricStatus(
+    memoryUsagePercent,
+    thresholds.memory.warning,
+    thresholds.memory.critical,
+  );
+
+  return {
+    availableMemory: memory.available,
+    freeMemory: memory.free,
+    memoryUsagePercent,
+    status,
+    swapFree: memory.swapfree,
+    swapTotal: memory.swaptotal,
+    swapUsagePercent,
+    swapUsed: memory.swapused,
+    thresholds: thresholds.memory,
+    topProcesses: [...processList]
+      .sort((a, b) => b.memoryUsagePercent - a.memoryUsagePercent)
+      .slice(0, 5),
+    totalMemory: memory.total,
+    usedMemory: memory.used,
+  };
+}
+
 export async function getMetrics() {
   const [snapshot, osInfo, processList] = await Promise.all([
     getSystemSnapshot(),

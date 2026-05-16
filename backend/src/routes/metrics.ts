@@ -1,7 +1,12 @@
 import { Router } from "express";
 import { activityLogs } from "../data";
 import { requireRole } from "../middleware/auth";
-import { getCpuMetrics, getMetrics, getServerOverview } from "../services/systemMetrics";
+import {
+  getCpuMetrics,
+  getMemoryMetrics,
+  getMetrics,
+  getServerOverview,
+} from "../services/systemMetrics";
 
 export const metricsRouter = Router();
 
@@ -27,6 +32,14 @@ metricsRouter.get("/metrics/cpu", async (req, res) => {
   }
 
   res.json(await getCpuMetrics());
+});
+
+metricsRouter.get("/metrics/memory", async (req, res) => {
+  if (!requireRole(req, res, ["viewer", "operator", "admin"])) {
+    return;
+  }
+
+  res.json(await getMemoryMetrics());
 });
 
 metricsRouter.get("/logs", (req, res) => {
