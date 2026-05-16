@@ -6,6 +6,7 @@ export async function getProcesses(): Promise<ProcessRecord[]> {
   const data = await si.processes();
 
   return data.list
+    .filter((processRecord) => processRecord.pid > 0)
     .map((processRecord) => ({
       command: processRecord.command || processRecord.name,
       cpuUsagePercent: roundPercent(processRecord.cpu),

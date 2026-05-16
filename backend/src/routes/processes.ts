@@ -5,7 +5,7 @@ import { getProcesses, restartProcess } from "../services/processes";
 export const processesRouter = Router();
 
 processesRouter.get("/processes", async (req, res) => {
-  if (!requireRole(req, res, ["operator", "admin"])) {
+  if (!requireRole(req, res, ["viewer", "operator", "admin"])) {
     return;
   }
 
