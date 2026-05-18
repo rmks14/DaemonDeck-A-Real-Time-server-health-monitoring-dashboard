@@ -31,7 +31,7 @@ type LogEntryRow = {
   message: string;
 };
 
-const defaultDatabasePath = path.resolve(process.cwd(), "data", "serverpulse.sqlite");
+const defaultDatabasePath = path.resolve(process.cwd(), "data", "daemondeck.sqlite");
 const databasePath = process.env.DATABASE_PATH
   ? path.resolve(process.env.DATABASE_PATH)
   : defaultDatabasePath;

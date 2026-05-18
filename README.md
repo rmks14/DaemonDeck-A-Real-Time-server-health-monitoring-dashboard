@@ -1,14 +1,71 @@
-# ServerPulse
+# DaemonDeck
 
-A React and Express server monitoring dashboard with demo login, JWT auth,
-role-based access, real system metrics, live metric updates, and process actions.
+Real-time Linux server monitoring dashboard for tracking system health, resource usage, running processes, audit activity, and role-gated operational actions from a web UI.
 
-## What It Uses
+DaemonDeck is built as a practical DevOps/SRE dashboard: a React frontend, an Express API, live WebSocket metrics, SQLite persistence, JWT authentication, and real host metrics collected with `systeminformation`.
 
-- `backend` - Express, TypeScript, signed expiring JWT auth, SQLite persistence, hashed demo passwords, real system metrics via `systeminformation`, WebSocket live metrics
-- `frontend` - React, TypeScript, Vite, Recharts, nginx for Docker static serving
+## What It Does
 
-Demo users:
+- Monitors CPU, memory, disk, OS details, uptime, and running process count.
+- Streams live CPU, memory, and disk metrics over WebSocket.
+- Supports live pause/resume, manual refresh, last-updated timestamps, and 5s/10s/30s/1m refresh intervals.
+- Shows CPU per-core usage, load average, top CPU processes, and trend charts.
+- Shows total/used/free memory, swap usage, top memory processes, and trend charts.
+- Shows mounted disk partitions with usage and health status.
+- Lists real running processes with PID, name, CPU %, memory %, user, status, and start time.
+- Supports process search, CPU/memory sorting, process detail views, manual refresh, and permission-gated kill actions.
+- Persists users, bcrypt-hashed passwords, alert rules, and audit logs in SQLite.
+- Uses JWT sessions with role-based access control for viewer, operator, and admin users.
+
+## Tech Stack
+
+| Layer | Tech |
+| --- | --- |
+| Frontend | React, TypeScript, Vite, Recharts |
+| Backend | Node.js, Express, TypeScript |
+| Live updates | WebSocket |
+| Metrics | `systeminformation` |
+| Storage | SQLite with `better-sqlite3` |
+| Auth | JWT-style signed tokens, bcrypt password hashing |
+| Deployment | Docker, Docker Compose, Nginx reverse proxy |
+
+## Current Feature Status
+
+| Area | Status |
+| --- | --- |
+| Login, logout, protected routes | Done |
+| Role-based access control | Done |
+| SQLite users and hashed passwords | Done |
+| Server overview cards | Done |
+| CPU monitoring | Done |
+| Memory monitoring | Done |
+| Disk monitoring | Done |
+| Process monitoring | Done |
+| WebSocket live metrics | Done |
+| Configurable refresh intervals | Done |
+| Last updated timestamps | Done |
+| Loading, error, and empty states | Done |
+| Process details modal | Done |
+| Metric trend charts | Done |
+| Docker Compose deployment | Done |
+| Nginx reverse proxy | Done |
+| Persistent SQLite Docker volume | Done |
+| Container healthchecks | Done |
+| Audit logs | Basic persistent audit logs |
+| Alert rules | Basic persistent rules |
+| Service monitoring | Not yet |
+| Docker monitoring | Not yet |
+| Multi-server agent architecture | Not yet |
+
+## Roles
+
+| Role | Permissions |
+| --- | --- |
+| Viewer | View dashboard, metrics, logs, and process data |
+| Operator | Viewer permissions plus process and managed restart actions |
+| Admin | Operator permissions plus user roles, alert rules, and system actions |
+
+Demo accounts:
 
 ```txt
 demo / password123
@@ -16,31 +73,54 @@ viewer / password123
 operator / password123
 ```
 
-## Run With Docker
+The demo passwords are stored as bcrypt hashes in SQLite after the first backend start.
 
-```bash
-cp .env.docker.example .env
-docker compose up --build
+## Demo Walkthrough
+
+1. Sign in with `demo / password123` for admin access.
+2. Open **Overview** to inspect host health, CPU, memory, disk, uptime, OS, kernel, process count, and alert counts.
+3. Open **Metrics** to watch live CPU, memory, and disk charts. Change the refresh interval between `5s`, `10s`, `30s`, and `1m`, or pause live updates.
+4. Open **Processes** to search running processes, sort by CPU or memory usage, view process details, and use operator/admin-only process actions.
+5. Open **Logs** to review persisted audit activity.
+6. Open **Admin** as the demo admin user to manage roles, alert rules, and system actions.
+
+## Screenshots
+
+Recommended screenshots for the project README or resume portfolio:
+
+```txt
+docs/screenshots/login.png        Login screen
+docs/screenshots/overview.png     Server overview dashboard
+docs/screenshots/metrics.png      Live metrics, charts, and refresh interval selector
+docs/screenshots/processes.png    Process table and details modal
+docs/screenshots/admin.png        Admin role and alert controls
 ```
 
-PowerShell:
+Keep screenshots current after UI changes so the README reflects the actual app.
 
-```powershell
-Copy-Item .env.docker.example .env
-docker compose up --build
+## Architecture
+
+```txt
+React Dashboard
+  |
+  | REST API + WebSocket
+  v
+Express Backend
+  |
+  | systeminformation
+  v
+Local Host Metrics
+
+Express Backend
+  |
+  | better-sqlite3
+  v
+SQLite Database
 ```
 
-Open `http://localhost:8080`.
+## Getting Started
 
-The frontend container serves the built app with nginx and proxies `/api` plus
-the live metrics WebSocket to the backend container. Change
-`AUTH_TOKEN_SECRET` in `.env` before sharing or deploying the app.
-
-Docker reports the system data visible from inside the backend container. For
-true host-level monitoring, run the backend directly on the host or add host
-access intentionally for your deployment target.
-
-## Run Backend
+### 1. Backend
 
 ```bash
 cd backend
@@ -48,9 +128,13 @@ npm install
 npm run dev
 ```
 
-The API runs on `http://localhost:5000`.
+The API runs on:
 
-## Run Frontend
+```txt
+http://localhost:5000
+```
+
+### 2. Frontend
 
 ```bash
 cd frontend
@@ -58,58 +142,75 @@ npm install
 npm run dev
 ```
 
-The app runs on `http://localhost:5173`.
-
-## API
+The app runs on:
 
 ```txt
-GET   /api/health                    Public health check
-POST  /api/auth/login                Demo login
-GET   /api/auth/me                   Current session user
-POST  /api/auth/logout               End current session
-GET   /api/metrics                   Viewer/operator/admin metrics
-GET   /api/metrics/cpu               CPU metrics
-GET   /api/metrics/memory            Memory metrics
-GET   /api/metrics/disk              Disk metrics
-GET   /api/logs                      Viewer/operator/admin logs
-GET   /api/processes                 Viewer/operator/admin process list
-GET   /api/process-actions           Operator/admin managed process actions
-POST  /api/process-actions/:id/restart Operator/admin managed restart
-DELETE /api/processes/:id            Operator/admin process kill
-GET   /api/server/overview           Viewer/operator/admin server overview
-WS    /api/live/metrics              Authenticated live metrics stream
-GET   /api/admin/users               Admin user list
-PATCH /api/admin/users/:id/role      Admin role management
-GET   /api/admin/alerts              Admin alert rules
-PATCH /api/admin/alerts/:id          Admin alert rule toggle
-POST  /api/admin/system-actions      Admin system action
+http://localhost:5173
 ```
 
-## Roles
+## Docker Deployment
 
-```txt
-viewer    Dashboard, metrics, logs, and read-only processes
-operator  Viewer permissions plus process actions
-admin     Metrics, logs, process restarts, users, alerts, and system actions
+DaemonDeck can also run as a two-container Docker Compose deployment:
+
+- `frontend` - builds the React app and serves it through Nginx.
+- `backend` - runs the Express API and writes SQLite data to a persistent volume.
+- `daemondeck-data` - Docker volume mounted at `/app/data` for the SQLite database.
+
+Start the stack:
+
+```bash
+docker compose up --build
 ```
 
-## Server Overview
-
-The overview shows compact cards for CPU, memory, disk, uptime, hostname,
-operating system, kernel, health, running process count, active service count,
-and warning/critical alert counts.
-
-Health thresholds:
+Open the app:
 
 ```txt
-CPU    > 80% warning, > 90% critical
-Memory > 85% warning, > 95% critical
-Disk   > 80% warning, > 90% critical
+http://localhost:8080
+```
+
+Stop the stack:
+
+```bash
+docker compose down
+```
+
+Stop the stack and remove the persisted SQLite volume:
+
+```bash
+docker compose down -v
+```
+
+Set a stronger token secret before running outside local development:
+
+```bash
+AUTH_TOKEN_SECRET=replace-with-a-long-random-secret docker compose up --build
+```
+
+PowerShell:
+
+```powershell
+$env:AUTH_TOKEN_SECRET="replace-with-a-long-random-secret"
+docker compose up --build
+```
+
+Healthchecks:
+
+```bash
+docker compose ps
+docker compose exec backend node -e "fetch('http://127.0.0.1:5000/api/health').then(r => console.log(r.status))"
+docker compose exec frontend wget -qO- http://127.0.0.1/health
+```
+
+Nginx serves the frontend and proxies:
+
+```txt
+/api/*                  -> backend:5000
+/api/live/metrics       -> backend:5000 WebSocket stream
 ```
 
 ## Environment
 
-Optional local env files:
+Optional local environment files:
 
 ```bash
 cp backend/.env.example backend/.env
@@ -123,10 +224,62 @@ Copy-Item backend/.env.example backend/.env
 Copy-Item frontend/.env.example frontend/.env
 ```
 
-Backend data is stored in SQLite. By default the API creates
-`backend/data/serverpulse.sqlite`; set `DATABASE_PATH` in `backend/.env` to use a
-different file.
+Backend options:
 
-## Notes
+```txt
+PORT=5000
+CLIENT_URL=http://localhost:5173
+SESSION_TTL_MINUTES=60
+AUTH_TOKEN_SECRET=replace-with-a-long-random-local-secret
+DATABASE_PATH=./data/daemondeck.sqlite
+```
 
-JWTs are signed with `AUTH_TOKEN_SECRET` and expire after `SESSION_TTL_MINUTES`. Keep the same secret across backend restarts so browser refreshes can restore the session. Demo passwords are stored as bcrypt hashes in SQLite, but the demo credentials are still for local development only; change or remove them before deploying anywhere public.
+By default, the backend creates a local SQLite database at:
+
+```txt
+backend/data/daemondeck.sqlite
+```
+
+Local database files are ignored by Git.
+
+## Health Thresholds
+
+Thresholds are centralized in `backend/src/config/thresholds.ts`.
+
+```txt
+CPU     > 80% warning, > 90% critical
+Memory  > 85% warning, > 95% critical
+Disk    > 80% warning, > 90% critical
+```
+
+The dashboard classifies health as:
+
+| Status | Meaning |
+| --- | --- |
+| Healthy | CPU, memory, and disk are below warning thresholds |
+| Warning | At least one metric crossed its warning threshold |
+| Critical | At least one metric crossed its critical threshold |
+
+## Security Notes
+
+- Demo credentials are for local development only.
+- Set a strong `AUTH_TOKEN_SECRET` before using the app outside local development.
+- Process kill actions are permission-gated and require confirmation in the UI.
+- The current JWT implementation is custom HMAC signing. A production version should use a maintained JWT library such as `jose` or `jsonwebtoken`.
+- Login rate limiting and request-body validation are planned but not implemented yet.
+
+## Development Checks
+
+Build backend:
+
+```bash
+cd backend
+npm run build
+```
+
+Build frontend:
+
+```bash
+cd frontend
+npm run build
+```
