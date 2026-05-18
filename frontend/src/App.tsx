@@ -2,7 +2,7 @@ import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 
 const MetricTrendChart = lazy(() => import("./MetricTrendChart"));
 
-const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://localhost:5000" : window.location.origin);
 const tokenStorageKey = "simple-auth-token";
 
 type Role = "viewer" | "operator" | "admin";
