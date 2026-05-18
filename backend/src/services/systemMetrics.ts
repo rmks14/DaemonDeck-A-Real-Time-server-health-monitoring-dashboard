@@ -222,6 +222,22 @@ export async function getDiskMetrics() {
   };
 }
 
+export async function getLiveMetrics() {
+  const [cpu, memory, disk] = await Promise.all([
+    getCpuMetrics(),
+    getMemoryMetrics(),
+    getDiskMetrics(),
+  ]);
+
+  return {
+    cpu,
+    currentTime: new Date().toISOString(),
+    disk,
+    memory,
+    type: "metrics" as const,
+  };
+}
+
 export async function getMetrics() {
   const [snapshot, osInfo, processList] = await Promise.all([
     getSystemSnapshot(),

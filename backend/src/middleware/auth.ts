@@ -161,7 +161,11 @@ export function verifyJwt(token: string): JwtPayload | null {
 
 export function getCurrentSession(req: Request): CurrentSession | null {
   const token = getBearerToken(req);
-  const payload = token ? verifyJwt(token) : null;
+  return token ? getSessionFromToken(token) : null;
+}
+
+export function getSessionFromToken(token: string): CurrentSession | null {
+  const payload = verifyJwt(token);
 
   if (!payload) {
     return null;
