@@ -1,5 +1,6 @@
+import bcrypt from "bcryptjs";
 import { Router } from "express";
-import { addLog, users } from "../data";
+import { addLog, getUserByIdentifier } from "../data";
 import {
   createJwt,
   getBearerToken,
@@ -21,14 +22,9 @@ authRouter.post("/login", (req, res) => {
     return;
   }
 
-  const user = users.find(
-    (candidate) =>
-      candidate.password === password &&
-      (candidate.email.toLowerCase() === identifier ||
-        candidate.username.toLowerCase() === identifier),
-  );
+  const user = getUserByIdentifier(identifier);
 
-  if (!user) {
+  if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
     res.status(401).json({ message: "Invalid email/username or password." });
     return;
   }

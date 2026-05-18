@@ -8,3 +8,7 @@ coverage/
 npm-debug.log*
 *.tsbuildinfo
 .DS_Store
+backend/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { activityLogs } from "../data";
+import { getActivityLogs } from "../data";
 import { requireRole } from "../middleware/auth";
 import {
   getCpuMetrics,
@@ -56,5 +56,5 @@ metricsRouter.get("/logs", (req, res) => {
     return;
   }
 
-  res.json({ logs: activityLogs });
+  res.json({ logs: getActivityLogs() });
 });
