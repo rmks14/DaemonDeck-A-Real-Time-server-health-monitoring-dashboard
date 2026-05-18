@@ -149,36 +149,6 @@ backend/data/daemondeck.sqlite
 ```
 
 Local database files are ignored by Git.
-
-## API Overview
-
-```txt
-GET    /api/health                         Public health check
-POST   /api/auth/login                     Login
-GET    /api/auth/me                        Current session
-POST   /api/auth/logout                    Logout
-
-GET    /api/server/overview                Server overview
-GET    /api/metrics                        Combined metrics
-GET    /api/metrics/cpu                    CPU metrics
-GET    /api/metrics/memory                 Memory metrics
-GET    /api/metrics/disk                   Disk metrics
-GET    /api/logs                           Audit logs
-
-GET    /api/processes                      Running processes
-GET    /api/process-actions                Managed restart actions
-POST   /api/process-actions/:id/restart    Restart managed action
-DELETE /api/processes/:id                  Kill process by PID
-
-GET    /api/admin/users                    Admin user list
-PATCH  /api/admin/users/:id/role           Admin role management
-GET    /api/admin/alerts                   Admin alert rules
-PATCH  /api/admin/alerts/:id               Admin alert toggle
-POST   /api/admin/system-actions           Admin system action
-
-WS     /api/live/metrics?token=<jwt>       Live metrics stream
-```
-
 ## Health Thresholds
 
 Thresholds are centralized in `backend/src/config/thresholds.ts`.
@@ -220,18 +190,3 @@ Build frontend:
 cd frontend
 npm run build
 ```
-
-## Roadmap
-
-- Add configurable refresh intervals: 5s, 10s, 30s, 1m.
-- Show last updated timestamps across live metric panels.
-- Add real Linux service monitoring and service actions.
-- Add richer log search, filtering, and download.
-- Add active alert history and manual alert resolution.
-- Add Docker container monitoring.
-- Add Docker Compose deployment.
-- Add backend and frontend automated tests.
-
-## Resume Summary
-
-DaemonDeck is a full-stack infrastructure monitoring dashboard built with React, Node.js, Express, WebSocket, SQLite, and TypeScript. It tracks real host CPU, memory, disk, OS, and process metrics, streams live updates to the dashboard, persists users and audit data, and protects operational actions with role-based access control.
