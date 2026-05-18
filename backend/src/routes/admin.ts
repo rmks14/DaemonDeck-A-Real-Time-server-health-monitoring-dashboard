@@ -1,5 +1,13 @@
 import { Router } from "express";
-import { addLog, alertRules, users } from "../data";
+import {
+  addLog,
+  getAlertRuleById,
+  getAlertRules,
+  getUserById,
+  getUsers,
+  updateAlertRuleEnabled,
+  updateUserRole,
+} from "../data";
 import { isRole, publicUser, requireRole } from "../middleware/auth";
 
 export const adminRouter = Router();
@@ -9,7 +17,7 @@ adminRouter.get("/admin/users", (req, res) => {
     return;
   }
 
-  res.json({ users: users.map(publicUser) });
+  res.json({ users: getUsers().map(publicUser) });
 });
 
 adminRouter.patch("/admin/users/:id/role", (req, res) => {
@@ -20,7 +28,7 @@ adminRouter.patch("/admin/users/:id/role", (req, res) => {
   }
 
   const role = req.body?.role;
-  const user = users.find((candidate) => candidate.id === req.params.id);
+  const user = getUserById(req.params.id);
 
   if (!user) {
     res.status(404).json({ message: "User was not found." });
@@ -32,10 +40,16 @@ adminRouter.patch("/admin/users/:id/role", (req, res) => {
     return;
   }
 
-  user.role = role;
-  addLog(`${session.user.username} changed ${user.username} to ${role}`, "warning");
+  const updatedUser = updateUserRole(user.id, role);
 
-  res.json({ user: publicUser(user) });
+  if (!updatedUser) {
+    res.status(404).json({ message: "User was not found." });
+    return;
+  }
+
+  addLog(`${session.user.username} changed ${updatedUser.username} to ${role}`, "warning");
+
+  res.json({ user: publicUser(updatedUser) });
 });
 
 adminRouter.get("/admin/alerts", (req, res) => {
@@ -43,7 +57,7 @@ adminRouter.get("/admin/alerts", (req, res) => {
     return;
   }
 
-  res.json({ alerts: alertRules });
+  res.json({ alerts: getAlertRules() });
 });
 
 adminRouter.patch("/admin/alerts/:id", (req, res) => {
@@ -53,20 +67,28 @@ adminRouter.patch("/admin/alerts/:id", (req, res) => {
     return;
   }
 
-  const alert = alertRules.find((candidate) => candidate.id === req.params.id);
+  const alert = getAlertRuleById(req.params.id);
 
   if (!alert) {
     res.status(404).json({ message: "Alert rule was not found." });
     return;
   }
 
-  alert.enabled = Boolean(req.body?.enabled);
+  const updatedAlert = updateAlertRuleEnabled(alert.id, Boolean(req.body?.enabled));
+
+  if (!updatedAlert) {
+    res.status(404).json({ message: "Alert rule was not found." });
+    return;
+  }
+
   addLog(
-    `${session.user.username} ${alert.enabled ? "enabled" : "disabled"} ${alert.name}`,
+    `${session.user.username} ${
+      updatedAlert.enabled ? "enabled" : "disabled"
+    } ${updatedAlert.name}`,
     "warning",
   );
 
-  res.json({ alert });
+  res.json({ alert: updatedAlert });
 });
 
 adminRouter.post("/admin/system-actions", (req, res) => {

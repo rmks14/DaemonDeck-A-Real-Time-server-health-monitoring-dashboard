@@ -4,7 +4,7 @@ A small React and Express starter with demo login, JWT auth, protected dashboard
 
 ## What It Uses
 
-- `backend` - Express, TypeScript, signed expiring JWT auth, real system metrics via `systeminformation`
+- `backend` - Express, TypeScript, signed expiring JWT auth, SQLite persistence, hashed demo passwords, real system metrics via `systeminformation`
 - `frontend` - React, TypeScript, Vite
 
 Demo users:
@@ -92,6 +92,10 @@ Copy-Item backend/.env.example backend/.env
 Copy-Item frontend/.env.example frontend/.env
 ```
 
+Backend data is stored in SQLite. By default the API creates
+`backend/data/serverpulse.sqlite`; set `DATABASE_PATH` in `backend/.env` to use a
+different file.
+
 ## Notes
 
-JWTs are signed with `AUTH_TOKEN_SECRET` and expire after `SESSION_TTL_MINUTES`. Keep the same secret across backend restarts so browser refreshes can restore the session. Demo credentials are for local development only; change or remove them before deploying anywhere public.
+JWTs are signed with `AUTH_TOKEN_SECRET` and expire after `SESSION_TTL_MINUTES`. Keep the same secret across backend restarts so browser refreshes can restore the session. Demo passwords are stored as bcrypt hashes in SQLite, but the demo credentials are still for local development only; change or remove them before deploying anywhere public.

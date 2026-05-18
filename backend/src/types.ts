@@ -8,10 +8,10 @@ export type User = {
   username: string;
   email: string;
   role: Role;
-  password: string;
+  passwordHash: string;
 };
 
-export type PublicUser = Omit<User, "password">;
+export type PublicUser = Omit<User, "passwordHash">;
 
 export type JwtPayload = {
   sub: string;

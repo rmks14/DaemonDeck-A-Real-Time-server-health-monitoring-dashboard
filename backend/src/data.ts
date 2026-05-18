@@ -1,32 +1,226 @@
 import crypto from "node:crypto";
-import type { AlertRule, LogEntry, LogLevel, ServiceRecord, User } from "./types";
+import fs from "node:fs";
+import path from "node:path";
+import bcrypt from "bcryptjs";
+import Database from "better-sqlite3";
+import dotenv from "dotenv";
+import type { AlertRule, LogEntry, LogLevel, Role, ServiceRecord, User } from "./types";
 
-export const users: User[] = [
+dotenv.config();
+
+type UserRow = {
+  email: string;
+  id: string;
+  name: string;
+  password_hash: string;
+  role: Role;
+  username: string;
+};
+
+type AlertRuleRow = {
+  condition: string;
+  enabled: 0 | 1;
+  id: string;
+  name: string;
+};
+
+type LogEntryRow = {
+  created_at: string;
+  id: string;
+  level: LogLevel;
+  message: string;
+};
+
+const defaultDatabasePath = path.resolve(process.cwd(), "data", "serverpulse.sqlite");
+const databasePath = process.env.DATABASE_PATH
+  ? path.resolve(process.env.DATABASE_PATH)
+  : defaultDatabasePath;
+
+fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+
+const db = new Database(databasePath);
+db.pragma("journal_mode = WAL");
+db.pragma("foreign_keys = ON");
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    username TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL CHECK (role IN ('viewer', 'operator', 'admin')),
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS alert_rules (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    condition TEXT NOT NULL,
+    enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS activity_logs (
+    id TEXT PRIMARY KEY,
+    level TEXT NOT NULL CHECK (level IN ('info', 'warning', 'critical')),
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+`);
+
+const demoUsers = [
   {
+    email: "demo@example.com",
     id: "user-1",
     name: "Demo User",
+    role: "admin" as const,
     username: "demo",
-    email: "demo@example.com",
-    role: "admin",
-    password: "password123",
   },
   {
+    email: "viewer@example.com",
     id: "user-2",
     name: "Viewer User",
+    role: "viewer" as const,
     username: "viewer",
-    email: "viewer@example.com",
-    role: "viewer",
-    password: "password123",
   },
   {
+    email: "operator@example.com",
     id: "user-3",
     name: "Operator User",
+    role: "operator" as const,
     username: "operator",
-    email: "operator@example.com",
-    role: "operator",
-    password: "password123",
   },
 ];
+
+const demoAlertRules = [
+  {
+    condition: "Free memory below 15%",
+    enabled: true,
+    id: "alert-memory",
+    name: "Low memory",
+  },
+  {
+    condition: "System uptime below 5 minutes",
+    enabled: false,
+    id: "alert-uptime",
+    name: "Recent restart",
+  },
+];
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function mapUser(row: UserRow): User {
+  return {
+    email: row.email,
+    id: row.id,
+    name: row.name,
+    passwordHash: row.password_hash,
+    role: row.role,
+    username: row.username,
+  };
+}
+
+function mapAlertRule(row: AlertRuleRow): AlertRule {
+  return {
+    condition: row.condition,
+    enabled: row.enabled === 1,
+    id: row.id,
+    name: row.name,
+  };
+}
+
+function mapLogEntry(row: LogEntryRow): LogEntry {
+  return {
+    createdAt: row.created_at,
+    id: row.id,
+    level: row.level,
+    message: row.message,
+  };
+}
+
+function seedDatabase() {
+  const userCount = db.prepare("SELECT COUNT(*) AS count FROM users").get() as {
+    count: number;
+  };
+
+  if (userCount.count === 0) {
+    const insertUser = db.prepare(`
+      INSERT INTO users (
+        id,
+        name,
+        username,
+        email,
+        role,
+        password_hash,
+        created_at,
+        updated_at
+      )
+      VALUES (@id, @name, @username, @email, @role, @passwordHash, @createdAt, @updatedAt)
+    `);
+    const createdAt = nowIso();
+    const passwordHash = bcrypt.hashSync("password123", 12);
+
+    for (const user of demoUsers) {
+      insertUser.run({
+        ...user,
+        createdAt,
+        passwordHash,
+        updatedAt: createdAt,
+      });
+    }
+  }
+
+  const alertCount = db.prepare("SELECT COUNT(*) AS count FROM alert_rules").get() as {
+    count: number;
+  };
+
+  if (alertCount.count === 0) {
+    const insertAlertRule = db.prepare(`
+      INSERT INTO alert_rules (
+        id,
+        name,
+        condition,
+        enabled,
+        created_at,
+        updated_at
+      )
+      VALUES (@id, @name, @condition, @enabled, @createdAt, @updatedAt)
+    `);
+    const createdAt = nowIso();
+
+    for (const alertRule of demoAlertRules) {
+      insertAlertRule.run({
+        ...alertRule,
+        createdAt,
+        enabled: alertRule.enabled ? 1 : 0,
+        updatedAt: createdAt,
+      });
+    }
+  }
+
+  const logCount = db.prepare("SELECT COUNT(*) AS count FROM activity_logs").get() as {
+    count: number;
+  };
+
+  if (logCount.count === 0) {
+    db.prepare(`
+      INSERT INTO activity_logs (id, level, message, created_at)
+      VALUES (@id, @level, @message, @createdAt)
+    `).run({
+      createdAt: nowIso(),
+      id: crypto.randomUUID(),
+      level: "info",
+      message: "Dashboard API started",
+    });
+  }
+}
+
+seedDatabase();
 
 export const services: ServiceRecord[] = [
   { id: "api", name: "API server", status: "running", lastRestartedAt: null },
@@ -34,37 +228,96 @@ export const services: ServiceRecord[] = [
   { id: "scheduler", name: "Task scheduler", status: "running", lastRestartedAt: null },
 ];
 
-export const alertRules: AlertRule[] = [
-  {
-    id: "alert-memory",
-    name: "Low memory",
-    condition: "Free memory below 15%",
-    enabled: true,
-  },
-  {
-    id: "alert-uptime",
-    name: "Recent restart",
-    condition: "System uptime below 5 minutes",
-    enabled: false,
-  },
-];
+export function getUsers() {
+  const rows = db
+    .prepare("SELECT id, name, username, email, role, password_hash FROM users ORDER BY name")
+    .all() as UserRow[];
 
-export const activityLogs: LogEntry[] = [
-  {
-    id: crypto.randomUUID(),
-    level: "info",
-    message: "Dashboard API started",
-    createdAt: new Date().toISOString(),
-  },
-];
+  return rows.map(mapUser);
+}
+
+export function getUserById(id: string) {
+  const row = db
+    .prepare("SELECT id, name, username, email, role, password_hash FROM users WHERE id = ?")
+    .get(id) as UserRow | undefined;
+
+  return row ? mapUser(row) : null;
+}
+
+export function getUserByIdentifier(identifier: string) {
+  const normalizedIdentifier = identifier.trim().toLowerCase();
+  const row = db
+    .prepare(
+      `
+        SELECT id, name, username, email, role, password_hash
+        FROM users
+        WHERE lower(email) = ? OR lower(username) = ?
+      `,
+    )
+    .get(normalizedIdentifier, normalizedIdentifier) as UserRow | undefined;
+
+  return row ? mapUser(row) : null;
+}
+
+export function updateUserRole(id: string, role: Role) {
+  db.prepare("UPDATE users SET role = ?, updated_at = ? WHERE id = ?").run(
+    role,
+    nowIso(),
+    id,
+  );
+
+  return getUserById(id);
+}
+
+export function getAlertRules() {
+  const rows = db
+    .prepare("SELECT id, name, condition, enabled FROM alert_rules ORDER BY name")
+    .all() as AlertRuleRow[];
+
+  return rows.map(mapAlertRule);
+}
+
+export function getAlertRuleById(id: string) {
+  const row = db
+    .prepare("SELECT id, name, condition, enabled FROM alert_rules WHERE id = ?")
+    .get(id) as AlertRuleRow | undefined;
+
+  return row ? mapAlertRule(row) : null;
+}
+
+export function updateAlertRuleEnabled(id: string, enabled: boolean) {
+  db.prepare("UPDATE alert_rules SET enabled = ?, updated_at = ? WHERE id = ?").run(
+    enabled ? 1 : 0,
+    nowIso(),
+    id,
+  );
+
+  return getAlertRuleById(id);
+}
+
+export function getActivityLogs() {
+  const rows = db
+    .prepare(
+      `
+        SELECT id, level, message, created_at
+        FROM activity_logs
+        ORDER BY created_at DESC
+        LIMIT 100
+      `,
+    )
+    .all() as LogEntryRow[];
+
+  return rows.map(mapLogEntry);
+}
 
 export function addLog(message: string, level: LogLevel = "info") {
-  activityLogs.unshift({
+  db.prepare(`
+    INSERT INTO activity_logs (id, level, message, created_at)
+    VALUES (@id, @level, @message, @createdAt)
+  `).run({
+    createdAt: nowIso(),
     id: crypto.randomUUID(),
     level,
     message,
-    createdAt: new Date().toISOString(),
   });
-
-  activityLogs.splice(25);
 }

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import dotenv from "dotenv";
 import type { Request, Response } from "express";
-import { users } from "../data";
+import { getUserById } from "../data";
 import type { CurrentSession, JwtPayload, PublicUser, Role, User } from "../types";
 
 dotenv.config();
@@ -32,7 +32,7 @@ function getAuthTokenSecret() {
 }
 
 export function publicUser(user: User): PublicUser {
-  const { password: _password, ...safeUser } = user;
+  const { passwordHash: _passwordHash, ...safeUser } = user;
   return safeUser;
 }
 
@@ -171,7 +171,7 @@ export function getSessionFromToken(token: string): CurrentSession | null {
     return null;
   }
 
-  const user = users.find((candidate) => candidate.id === payload.sub);
+  const user = getUserById(payload.sub);
 
   return user ? { user, payload } : null;
 }
