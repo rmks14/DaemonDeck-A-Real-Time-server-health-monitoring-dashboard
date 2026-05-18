@@ -1,13 +1,62 @@
-# Simple Auth Starter
+# DaemonDeck
 
-A small React and Express starter with demo login, JWT auth, protected dashboard routes, role-based sections, server overview details, and a backend health check.
+Real-time Linux server monitoring dashboard for tracking system health, resource usage, running processes, audit activity, and role-gated operational actions from a web UI.
 
-## What It Uses
+DaemonDeck is built as a practical DevOps/SRE dashboard: a React frontend, an Express API, live WebSocket metrics, SQLite persistence, JWT authentication, and real host metrics collected with `systeminformation`.
 
-- `backend` - Express, TypeScript, signed expiring JWT auth, SQLite persistence, hashed demo passwords, real system metrics via `systeminformation`
-- `frontend` - React, TypeScript, Vite
+## What It Does
 
-Demo users:
+- Monitors CPU, memory, disk, OS details, uptime, and running process count.
+- Streams live CPU, memory, and disk metrics over WebSocket.
+- Shows CPU per-core usage, load average, top CPU processes, and trend charts.
+- Shows total/used/free memory, swap usage, top memory processes, and trend charts.
+- Shows mounted disk partitions with usage and health status.
+- Lists real running processes with PID, name, CPU %, memory %, user, status, and start time.
+- Supports process search, CPU/memory sorting, manual refresh, and permission-gated kill actions.
+- Persists users, bcrypt-hashed passwords, alert rules, and audit logs in SQLite.
+- Uses JWT sessions with role-based access control for viewer, operator, and admin users.
+
+## Tech Stack
+
+| Layer | Tech |
+| --- | --- |
+| Frontend | React, TypeScript, Vite, Recharts |
+| Backend | Node.js, Express, TypeScript |
+| Live updates | WebSocket |
+| Metrics | `systeminformation` |
+| Storage | SQLite with `better-sqlite3` |
+| Auth | JWT-style signed tokens, bcrypt password hashing |
+
+## Current Feature Status
+
+| Area | Status |
+| --- | --- |
+| Login, logout, protected routes | Done |
+| Role-based access control | Done |
+| SQLite users and hashed passwords | Done |
+| Server overview cards | Done |
+| CPU monitoring | Done |
+| Memory monitoring | Done |
+| Disk monitoring | Done |
+| Process monitoring | Done |
+| WebSocket live metrics | Done |
+| Metric trend charts | Done |
+| Audit logs | Basic persistent audit logs |
+| Alert rules | Basic persistent rules |
+| Configurable refresh intervals | Not yet |
+| Service monitoring | Not yet |
+| Docker monitoring | Not yet |
+| Multi-server agent architecture | Not yet |
+
+## Roles
+
+| Role | Permissions |
+| --- | --- |
+| Viewer | View dashboard, metrics, logs, and process data |
+| Operator | Viewer permissions plus process and managed restart actions |
+| Admin | Operator permissions plus user roles, alert rules, and system actions |
+
+Demo accounts:
 
 ```txt
 demo / password123
@@ -15,7 +64,31 @@ viewer / password123
 operator / password123
 ```
 
-## Run Backend
+The demo passwords are stored as bcrypt hashes in SQLite after the first backend start.
+
+## Architecture
+
+```txt
+React Dashboard
+  |
+  | REST API + WebSocket
+  v
+Express Backend
+  |
+  | systeminformation
+  v
+Local Host Metrics
+
+Express Backend
+  |
+  | better-sqlite3
+  v
+SQLite Database
+```
+
+## Getting Started
+
+### 1. Backend
 
 ```bash
 cd backend
@@ -23,9 +96,13 @@ npm install
 npm run dev
 ```
 
-The API runs on `http://localhost:5000`.
+The API runs on:
 
-## Run Frontend
+```txt
+http://localhost:5000
+```
+
+### 2. Frontend
 
 ```bash
 cd frontend
@@ -33,52 +110,15 @@ npm install
 npm run dev
 ```
 
-The app runs on `http://localhost:5173`.
-
-## API
+The app runs on:
 
 ```txt
-GET   /api/health                    Public health check
-POST  /api/auth/login                Demo login
-GET   /api/auth/me                   Current session user
-POST  /api/auth/logout               End current session
-GET   /api/metrics                   Viewer/operator/admin metrics
-GET   /api/logs                      Viewer/operator/admin logs
-GET   /api/processes                 Operator/admin process list
-POST  /api/processes/:id/restart     Operator/admin restart action
-GET   /api/server/overview           Admin-only server overview
-GET   /api/admin/users               Admin user list
-PATCH /api/admin/users/:id/role      Admin role management
-GET   /api/admin/alerts              Admin alert rules
-PATCH /api/admin/alerts/:id          Admin alert rule toggle
-POST  /api/admin/system-actions      Admin system action
-```
-
-## Roles
-
-```txt
-viewer    Metrics and logs
-operator  Metrics, logs, and process restarts
-admin     Metrics, logs, process restarts, users, alerts, and system actions
-```
-
-## Server Overview
-
-The admin overview shows compact cards for CPU, memory, disk, uptime, hostname,
-operating system, kernel, health, running process count, active service count,
-and warning/critical alert counts.
-
-Health thresholds:
-
-```txt
-CPU    > 80% warning, > 90% critical
-Memory > 85% warning, > 95% critical
-Disk   > 80% warning, > 90% critical
+http://localhost:5173
 ```
 
 ## Environment
 
-Optional local env files:
+Optional local environment files:
 
 ```bash
 cp backend/.env.example backend/.env
@@ -92,10 +132,106 @@ Copy-Item backend/.env.example backend/.env
 Copy-Item frontend/.env.example frontend/.env
 ```
 
-Backend data is stored in SQLite. By default the API creates
-`backend/data/serverpulse.sqlite`; set `DATABASE_PATH` in `backend/.env` to use a
-different file.
+Backend options:
 
-## Notes
+```txt
+PORT=5000
+CLIENT_URL=http://localhost:5173
+SESSION_TTL_MINUTES=60
+AUTH_TOKEN_SECRET=replace-with-a-long-random-local-secret
+DATABASE_PATH=./data/daemondeck.sqlite
+```
 
-JWTs are signed with `AUTH_TOKEN_SECRET` and expire after `SESSION_TTL_MINUTES`. Keep the same secret across backend restarts so browser refreshes can restore the session. Demo passwords are stored as bcrypt hashes in SQLite, but the demo credentials are still for local development only; change or remove them before deploying anywhere public.
+By default, the backend creates a local SQLite database at:
+
+```txt
+backend/data/daemondeck.sqlite
+```
+
+Local database files are ignored by Git.
+
+## API Overview
+
+```txt
+GET    /api/health                         Public health check
+POST   /api/auth/login                     Login
+GET    /api/auth/me                        Current session
+POST   /api/auth/logout                    Logout
+
+GET    /api/server/overview                Server overview
+GET    /api/metrics                        Combined metrics
+GET    /api/metrics/cpu                    CPU metrics
+GET    /api/metrics/memory                 Memory metrics
+GET    /api/metrics/disk                   Disk metrics
+GET    /api/logs                           Audit logs
+
+GET    /api/processes                      Running processes
+GET    /api/process-actions                Managed restart actions
+POST   /api/process-actions/:id/restart    Restart managed action
+DELETE /api/processes/:id                  Kill process by PID
+
+GET    /api/admin/users                    Admin user list
+PATCH  /api/admin/users/:id/role           Admin role management
+GET    /api/admin/alerts                   Admin alert rules
+PATCH  /api/admin/alerts/:id               Admin alert toggle
+POST   /api/admin/system-actions           Admin system action
+
+WS     /api/live/metrics?token=<jwt>       Live metrics stream
+```
+
+## Health Thresholds
+
+Thresholds are centralized in `backend/src/config/thresholds.ts`.
+
+```txt
+CPU     > 80% warning, > 90% critical
+Memory  > 85% warning, > 95% critical
+Disk    > 80% warning, > 90% critical
+```
+
+The dashboard classifies health as:
+
+| Status | Meaning |
+| --- | --- |
+| Healthy | CPU, memory, and disk are below warning thresholds |
+| Warning | At least one metric crossed its warning threshold |
+| Critical | At least one metric crossed its critical threshold |
+
+## Security Notes
+
+- Demo credentials are for local development only.
+- Set a strong `AUTH_TOKEN_SECRET` before using the app outside local development.
+- Process kill actions are permission-gated and require confirmation in the UI.
+- The current JWT implementation is custom HMAC signing. A production version should use a maintained JWT library such as `jose` or `jsonwebtoken`.
+- Login rate limiting and request-body validation are planned but not implemented yet.
+
+## Development Checks
+
+Build backend:
+
+```bash
+cd backend
+npm run build
+```
+
+Build frontend:
+
+```bash
+cd frontend
+npm run build
+```
+
+## Roadmap
+
+- Add configurable refresh intervals: 5s, 10s, 30s, 1m.
+- Show last updated timestamps across live metric panels.
+- Add real Linux service monitoring and service actions.
+- Add richer log search, filtering, and download.
+- Add active alert history and manual alert resolution.
+- Add Docker container monitoring.
+- Add Docker Compose deployment.
+- Add backend and frontend automated tests.
+
+## Resume Summary
+
+DaemonDeck is a full-stack infrastructure monitoring dashboard built with React, Node.js, Express, WebSocket, SQLite, and TypeScript. It tracks real host CPU, memory, disk, OS, and process metrics, streams live updates to the dashboard, persists users and audit data, and protects operational actions with role-based access control.
