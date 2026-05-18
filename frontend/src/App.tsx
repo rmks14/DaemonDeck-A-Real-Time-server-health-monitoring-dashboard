@@ -136,6 +136,13 @@ type ProcessRecord = {
   lastRestartedAt: string | null;
 };
 
+type ManagedProcessAction = {
+  id: string;
+  lastRestartedAt: string | null;
+  name: string;
+  status: string;
+};
+
 type AlertRule = {
   id: string;
   name: string;
@@ -1098,10 +1105,12 @@ function ProcessesPanel({
   user: User;
 }) {
   const [processes, setProcesses] = useState<ProcessRecord[]>([]);
+  const [managedActions, setManagedActions] = useState<ManagedProcessAction[]>([]);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"cpu" | "memory">("cpu");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [pendingAction, setPendingAction] = useState("");
   const canManageProcesses = user.role === "operator" || user.role === "admin";
   const visibleProcesses = [...processes]
     .filter((processRecord) =>
@@ -1118,10 +1127,19 @@ function ProcessesPanel({
     setMessage("");
 
     try {
-      const data = await apiRequest<{ processes: ProcessRecord[] }>("/api/processes");
+      const [processData, actionData] = await Promise.all([
+        apiRequest<{ processes: ProcessRecord[] }>("/api/processes"),
+        canManageProcesses
+          ? apiRequest<{ processes: ManagedProcessAction[] }>("/api/process-actions")
+          : Promise.resolve(null),
+      ]);
 
-      if (data) {
-        setProcesses(data.processes);
+      if (processData) {
+        setProcesses(processData.processes);
+      }
+
+      if (actionData) {
+        setManagedActions(actionData.processes);
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not load processes.");
@@ -1135,6 +1153,7 @@ function ProcessesPanel({
 
     setError("");
     setMessage("");
+    setPendingAction(`kill-${processRecord.pid}`);
 
     try {
       const data = await apiRequest<{ message: string }>(
@@ -1148,6 +1167,30 @@ function ProcessesPanel({
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not stop process.");
+    } finally {
+      setPendingAction("");
+    }
+  }
+
+  async function restartManagedAction(action: ManagedProcessAction) {
+    setError("");
+    setMessage("");
+    setPendingAction(`restart-${action.id}`);
+
+    try {
+      const data = await apiRequest<{ message: string }>(
+        `/api/process-actions/${action.id}/restart`,
+        { method: "POST" },
+      );
+
+      if (data) {
+        setMessage(data.message);
+        await loadProcesses();
+      }
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not restart process.");
+    } finally {
+      setPendingAction("");
     }
   }
 
@@ -1168,6 +1211,33 @@ function ProcessesPanel({
           ? "Operator actions are available for running processes."
           : "Viewer access is read-only."}
       </p>
+
+      {canManageProcesses && managedActions.length > 0 && (
+        <section className="action-panel">
+          <h3>Managed restart actions</h3>
+          <div className="stack">
+            {managedActions.map((action) => (
+              <div className="row" key={action.id}>
+                <div>
+                  <strong>{action.name}</strong>
+                  <p className="muted">
+                    {action.status}
+                    {action.lastRestartedAt
+                      ? ` - restarted ${formatDateTime(action.lastRestartedAt)}`
+                      : ""}
+                  </p>
+                </div>
+                <button
+                  disabled={pendingAction === `restart-${action.id}`}
+                  onClick={() => void restartManagedAction(action)}
+                >
+                  {pendingAction === `restart-${action.id}` ? "Restarting..." : "Restart"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="table-controls">
         <input
@@ -1213,9 +1283,10 @@ function ProcessesPanel({
                   <td>
                     <button
                       className="danger"
+                      disabled={pendingAction === `kill-${processRecord.pid}`}
                       onClick={() => void killProcess(processRecord)}
                     >
-                      Kill
+                      {pendingAction === `kill-${processRecord.pid}` ? "Killing..." : "Kill"}
                     </button>
                   </td>
                 )}

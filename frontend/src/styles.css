@@ -248,6 +248,12 @@ h3 {
   margin-top: 20px;
 }
 
+.action-panel {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+}
+
 .metrics-stack {
   display: grid;
   gap: 24px;

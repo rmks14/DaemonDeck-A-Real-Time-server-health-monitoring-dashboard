@@ -36,10 +36,15 @@ export function getActiveServiceCount() {
   return services.filter((service) => service.status === "running").length;
 }
 
+export function getManagedProcessActions() {
+  return services;
+}
+
 export function restartProcess(processId: string, username: string) {
   const service = services.find((candidate) => candidate.id === processId);
 
   if (!service) {
+    addLog(`${username} tried to restart unknown process action ${processId}`, "warning");
     return null;
   }
 
@@ -54,10 +59,12 @@ export function killProcess(processId: string, username: string) {
   const pid = Number(processId);
 
   if (!Number.isInteger(pid) || pid <= 0) {
+    addLog(`${username} tried to kill invalid process ${processId}`, "warning");
     return { message: "Process ID must be a positive integer.", status: 400 };
   }
 
   if (pid === process.pid) {
+    addLog(`${username} tried to kill the dashboard API process`, "critical");
     return { message: "Refusing to stop the dashboard API process.", status: 400 };
   }
 
@@ -73,9 +80,11 @@ export function killProcess(processId: string, username: string) {
         : "";
 
     if (code === "ESRCH") {
+      addLog(`${username} tried to kill missing process ${pid}`, "warning");
       return { message: "Process was not found.", status: 404 };
     }
 
+    addLog(`${username} tried to kill process ${pid}, but it failed`, "critical");
     return { message: "Process could not be stopped.", status: 500 };
   }
 }
