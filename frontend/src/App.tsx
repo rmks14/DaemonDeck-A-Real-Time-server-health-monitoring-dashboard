@@ -117,6 +117,14 @@ type TrendPoint = {
   time: string;
 };
 
+type LiveMetricsMessage = {
+  cpu: CpuMetrics;
+  currentTime: string;
+  disk: DiskMetrics;
+  memory: MemoryMetrics;
+  type: "metrics";
+};
+
 type LogEntry = {
   id: string;
   level: "info" | "warning" | "critical";
@@ -389,6 +397,7 @@ function App() {
       onLogout={logout}
       route={route}
       sessionExpiresAt={sessionExpiresAt}
+      token={token}
       user={user}
     />
   );
@@ -487,6 +496,7 @@ function DashboardPage({
   onLogout,
   route,
   sessionExpiresAt,
+  token,
   user,
 }: {
   apiRequest: ApiRequest;
@@ -498,6 +508,7 @@ function DashboardPage({
   onLogout: () => Promise<void>;
   route: string;
   sessionExpiresAt: string;
+  token: string | null;
   user: User;
 }) {
   const canAdmin = user.role === "admin";
@@ -553,7 +564,9 @@ function DashboardPage({
             user={user}
           />
         )}
-        {route === "/dashboard/metrics" && <MetricsPanel apiRequest={apiRequest} />}
+        {route === "/dashboard/metrics" && (
+          <MetricsPanel apiRequest={apiRequest} token={token} />
+        )}
         {route === "/dashboard/processes" && (
           <ProcessesPanel apiRequest={apiRequest} user={user} />
         )}
@@ -724,12 +737,44 @@ function StatCard({
   );
 }
 
-function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
+function MetricsPanel({
+  apiRequest,
+  token,
+}: {
+  apiRequest: ApiRequest;
+  token: string | null;
+}) {
   const [cpuMetrics, setCpuMetrics] = useState<CpuMetrics | null>(null);
   const [memoryMetrics, setMemoryMetrics] = useState<MemoryMetrics | null>(null);
   const [diskMetrics, setDiskMetrics] = useState<DiskMetrics | null>(null);
   const [history, setHistory] = useState<TrendPoint[]>([]);
+  const [liveEnabled, setLiveEnabled] = useState(true);
+  const [liveStatus, setLiveStatus] = useState("Connecting");
   const [error, setError] = useState("");
+
+  function applyMetrics(
+    cpuData: CpuMetrics,
+    memoryData: MemoryMetrics,
+    diskData: DiskMetrics,
+    timestamp = new Date(),
+  ) {
+    setCpuMetrics(cpuData);
+    setMemoryMetrics(memoryData);
+    setDiskMetrics(diskData);
+    setHistory((current) => [
+      ...current.slice(-19),
+      {
+        cpu: cpuData.cpuUsagePercent,
+        disk: diskData.usagePercent,
+        memory: memoryData.memoryUsagePercent,
+        time: new Intl.DateTimeFormat(undefined, {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }).format(timestamp),
+      },
+    ]);
+  }
 
   async function loadMetrics() {
     setError("");
@@ -741,32 +786,8 @@ function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
         apiRequest<DiskMetrics>("/api/metrics/disk"),
       ]);
 
-      if (cpuData) {
-        setCpuMetrics(cpuData);
-      }
-
-      if (memoryData) {
-        setMemoryMetrics(memoryData);
-      }
-
-      if (diskData) {
-        setDiskMetrics(diskData);
-      }
-
       if (cpuData && memoryData && diskData) {
-        setHistory((current) => [
-          ...current.slice(-19),
-          {
-            cpu: cpuData.cpuUsagePercent,
-            disk: diskData.usagePercent,
-            memory: memoryData.memoryUsagePercent,
-            time: new Intl.DateTimeFormat(undefined, {
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            }).format(new Date()),
-          },
-        ]);
+        applyMetrics(cpuData, memoryData, diskData);
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not load metrics.");
@@ -777,14 +798,70 @@ function MetricsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
     void loadMetrics();
   }, []);
 
+  useEffect(() => {
+    if (!liveEnabled) {
+      setLiveStatus("Paused");
+      return;
+    }
+
+    if (!token) {
+      setLiveStatus("Disconnected");
+      return;
+    }
+
+    const ws = new WebSocket(getWebSocketUrl(token));
+
+    ws.onopen = () => {
+      setLiveStatus("Live");
+      setError("");
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(String(event.data)) as LiveMetricsMessage | { message?: string; type: "error" };
+
+        if (data.type === "metrics") {
+          applyMetrics(data.cpu, data.memory, data.disk, new Date(data.currentTime));
+          return;
+        }
+
+        setError(data.message || "Live metrics stream returned an error.");
+      } catch {
+        setError("Live metrics stream returned invalid data.");
+      }
+    };
+
+    ws.onerror = () => {
+      setLiveStatus("Connection issue");
+      void loadMetrics();
+    };
+
+    ws.onclose = () => {
+      setLiveStatus("Disconnected");
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [liveEnabled, token]);
+
   return (
     <section className="panel">
       <div className="panel-heading">
         <h2>System Metrics</h2>
-        <button className="secondary" onClick={loadMetrics}>
-          Refresh
-        </button>
+        <div className="inline-actions">
+          <button
+            className={liveEnabled ? "secondary active-action" : "secondary"}
+            onClick={() => setLiveEnabled((current) => !current)}
+          >
+            {liveEnabled ? "Live on" : "Live off"}
+          </button>
+          <button className="secondary" onClick={loadMetrics}>
+            Refresh
+          </button>
+        </div>
       </div>
+      <p className="muted">Live status: {liveStatus}</p>
 
       {(cpuMetrics || memoryMetrics || diskMetrics) && (
         <div className="metrics-stack">
@@ -1545,6 +1622,14 @@ function formatDateTime(value: string) {
 
 function formatBytes(value: number) {
   return `${Math.round(value / 1024 / 1024)} MB`;
+}
+
+function getWebSocketUrl(token: string) {
+  const baseUrl = apiUrl.toLowerCase().startsWith("https")
+    ? apiUrl.replace(/^https/i, "wss")
+    : apiUrl.replace(/^http/i, "ws");
+
+  return `${baseUrl}/api/live/metrics?token=${encodeURIComponent(token)}`;
 }
 
 function round(value: number) {
