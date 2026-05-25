@@ -1,11 +1,14 @@
+.git
+.github
 node_modules
 dist
-data
+build
 coverage
 .env
 .env.*
 *.log
+npm-debug.log*
+backend/data
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
-npm-debug.log*

@@ -1826,6 +1826,14 @@ function formatBytes(value: number) {
 }
 
 function getWebSocketUrl(token: string, intervalMs: RefreshIntervalMs) {
+  if (!apiUrl) {
+    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+
+    return `${protocol}://${window.location.host}/api/live/metrics?token=${encodeURIComponent(
+      token,
+    )}&intervalMs=${intervalMs}`;
+  }
+
   const baseUrl = apiUrl.toLowerCase().startsWith("https")
     ? apiUrl.replace(/^https/i, "wss")
     : apiUrl.replace(/^http/i, "ws");
