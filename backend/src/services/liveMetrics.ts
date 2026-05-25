@@ -4,10 +4,21 @@ import { getSessionFromToken } from "../middleware/auth";
 import { getLiveMetrics } from "./systemMetrics";
 
 const liveMetricsPath = "/api/live/metrics";
-const liveMetricsIntervalMs = 5000;
+const allowedLiveMetricsIntervals = [5000, 10000, 30000, 60000] as const;
+
+function getLiveMetricsInterval(url: URL) {
+  const requestedInterval = Number(url.searchParams.get("intervalMs"));
+
+  return allowedLiveMetricsIntervals.includes(
+    requestedInterval as (typeof allowedLiveMetricsIntervals)[number],
+  )
+    ? requestedInterval
+    : 5000;
+}
 
 export function attachLiveMetrics(server: Server) {
   const wss = new WebSocketServer({ noServer: true });
+  const liveIntervals = new WeakMap<WebSocket, number>();
 
   server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url || "", "http://localhost");
@@ -25,12 +36,16 @@ export function attachLiveMetrics(server: Server) {
       return;
     }
 
+    const intervalMs = getLiveMetricsInterval(url);
+
     wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit("connection", ws);
+      liveIntervals.set(ws, intervalMs);
+      wss.emit("connection", ws, req);
     });
   });
 
   wss.on("connection", (ws) => {
+    const intervalMs = liveIntervals.get(ws) ?? 5000;
     let closed = false;
 
     async function sendMetrics() {
@@ -46,7 +61,7 @@ export function attachLiveMetrics(server: Server) {
     }
 
     void sendMetrics();
-    const interval = setInterval(() => void sendMetrics(), liveMetricsIntervalMs);
+    const interval = setInterval(() => void sendMetrics(), intervalMs);
 
     ws.on("close", () => {
       closed = true;

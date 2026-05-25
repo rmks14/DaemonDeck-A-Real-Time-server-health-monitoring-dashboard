@@ -3,9 +3,16 @@ import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 const MetricTrendChart = lazy(() => import("./MetricTrendChart"));
 
 const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const tokenStorageKey = "simple-auth-token";
+const tokenStorageKey = "daemondeck-token";
+const refreshIntervals = [
+  { label: "5s", value: 5000 },
+  { label: "10s", value: 10000 },
+  { label: "30s", value: 30000 },
+  { label: "1m", value: 60000 },
+] as const;
 
 type Role = "viewer" | "operator" | "admin";
+type RefreshIntervalMs = (typeof refreshIntervals)[number]["value"];
 
 type User = {
   id: string;
@@ -133,6 +140,7 @@ type LogEntry = {
 };
 
 type ProcessRecord = {
+  command: string;
   cpuUsagePercent: number;
   id: string;
   memoryUsagePercent: number;
@@ -369,7 +377,7 @@ function App() {
     return (
       <main className="page">
         <section className="panel">
-          <p className="eyebrow">ServerPulse</p>
+          <p className="eyebrow">DaemonDeck</p>
           <h1>Checking session</h1>
         </section>
       </main>
@@ -438,7 +446,7 @@ function LoginPage({
   return (
     <main className="page">
       <section className="panel">
-        <p className="eyebrow">ServerPulse</p>
+        <p className="eyebrow">DaemonDeck</p>
         <h1>Sign in</h1>
         <p className="description">Use one of the local demo accounts.</p>
 
@@ -531,7 +539,7 @@ function DashboardPage({
       <section className="dashboard-shell">
         <header className="dashboard-header">
           <div>
-            <p className="eyebrow">ServerPulse</p>
+            <p className="eyebrow">DaemonDeck</p>
             <h1>Dashboard</h1>
           </div>
 
@@ -641,6 +649,7 @@ function OverviewPanel({
 function ServerOverviewPanel({ apiRequest }: { apiRequest: ApiRequest }) {
   const [overview, setOverview] = useState<ServerOverview | null>(null);
   const [error, setError] = useState("");
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function loadOverview() {
@@ -652,6 +661,7 @@ function ServerOverviewPanel({ apiRequest }: { apiRequest: ApiRequest }) {
 
       if (data) {
         setOverview(data);
+        setLastUpdatedAt(new Date());
       }
     } catch (caughtError) {
       setOverview(null);
@@ -677,6 +687,9 @@ function ServerOverviewPanel({ apiRequest }: { apiRequest: ApiRequest }) {
           {loading ? "Refreshing..." : "Refresh"}
         </button>
       </div>
+      <p className="muted">
+        Last updated: {lastUpdatedAt ? formatDateTime(lastUpdatedAt.toISOString()) : "Never"}
+      </p>
 
       {overview ? (
         <>
@@ -750,7 +763,12 @@ function MetricsPanel({
   const [history, setHistory] = useState<TrendPoint[]>([]);
   const [liveEnabled, setLiveEnabled] = useState(true);
   const [liveStatus, setLiveStatus] = useState("Connecting");
+  const [refreshIntervalMs, setRefreshIntervalMs] =
+    useState<RefreshIntervalMs>(5000);
   const [error, setError] = useState("");
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [loading, setLoading] = useState(false);
+  const hasMetrics = Boolean(cpuMetrics || memoryMetrics || diskMetrics);
 
   function applyMetrics(
     cpuData: CpuMetrics,
@@ -761,6 +779,7 @@ function MetricsPanel({
     setCpuMetrics(cpuData);
     setMemoryMetrics(memoryData);
     setDiskMetrics(diskData);
+    setLastUpdatedAt(timestamp);
     setHistory((current) => [
       ...current.slice(-19),
       {
@@ -777,6 +796,7 @@ function MetricsPanel({
   }
 
   async function loadMetrics() {
+    setLoading(true);
     setError("");
 
     try {
@@ -791,6 +811,8 @@ function MetricsPanel({
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not load metrics.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -809,14 +831,23 @@ function MetricsPanel({
       return;
     }
 
-    const ws = new WebSocket(getWebSocketUrl(token));
+    let disposed = false;
+    const ws = new WebSocket(getWebSocketUrl(token, refreshIntervalMs));
 
     ws.onopen = () => {
+      if (disposed) {
+        return;
+      }
+
       setLiveStatus("Live");
       setError("");
     };
 
     ws.onmessage = (event) => {
+      if (disposed) {
+        return;
+      }
+
       try {
         const data = JSON.parse(String(event.data)) as LiveMetricsMessage | { message?: string; type: "error" };
 
@@ -832,38 +863,79 @@ function MetricsPanel({
     };
 
     ws.onerror = () => {
+      if (disposed) {
+        return;
+      }
+
       setLiveStatus("Connection issue");
       void loadMetrics();
     };
 
     ws.onclose = () => {
+      if (disposed) {
+        return;
+      }
+
       setLiveStatus("Disconnected");
     };
 
     return () => {
+      disposed = true;
       ws.close();
     };
-  }, [liveEnabled, token]);
+  }, [liveEnabled, refreshIntervalMs, token]);
 
   return (
     <section className="panel">
       <div className="panel-heading">
         <h2>System Metrics</h2>
         <div className="inline-actions">
+          <label className="control-label">
+            Refresh
+            <select
+              aria-label="Refresh interval"
+              onChange={(event) =>
+                setRefreshIntervalMs(Number(event.target.value) as RefreshIntervalMs)
+              }
+              value={refreshIntervalMs}
+            >
+              {refreshIntervals.map((interval) => (
+                <option key={interval.value} value={interval.value}>
+                  {interval.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             className={liveEnabled ? "secondary active-action" : "secondary"}
             onClick={() => setLiveEnabled((current) => !current)}
           >
             {liveEnabled ? "Live on" : "Live off"}
           </button>
-          <button className="secondary" onClick={loadMetrics}>
-            Refresh
+          <button className="secondary" disabled={loading} onClick={loadMetrics}>
+            {loading ? "Refreshing..." : "Refresh"}
           </button>
         </div>
       </div>
-      <p className="muted">Live status: {liveStatus}</p>
+      <div className="status-row">
+        <p className="muted">Live status: {liveStatus}</p>
+        <p className="muted">
+          Last updated:{" "}
+          {lastUpdatedAt ? formatDateTime(lastUpdatedAt.toISOString()) : "Never"}
+        </p>
+      </div>
 
-      {(cpuMetrics || memoryMetrics || diskMetrics) && (
+      {loading && !hasMetrics && (
+        <p className="description">Loading system metrics...</p>
+      )}
+
+      {!loading && !hasMetrics && !error && (
+        <p className="description">
+          Metrics have not loaded yet. Use refresh or resume live updates.
+        </p>
+      )}
+
+      {hasMetrics && (
         <div className="metrics-stack">
           {history.length > 0 && (
             <section>
@@ -1109,21 +1181,29 @@ function MetricProcessTable({
           </tr>
         </thead>
         <tbody>
-          {processes.map((processRecord) => (
-            <tr key={processRecord.id}>
-              <td>{processRecord.pid}</td>
-              <td>{processRecord.name}</td>
-              <td>{processRecord.user}</td>
-              <td
-                className={getUsageClass(
-                  processRecord[valueKey],
-                  thresholds,
-                )}
-              >
-                {round(processRecord[valueKey])}%
+          {processes.length > 0 ? (
+            processes.map((processRecord) => (
+              <tr key={processRecord.id}>
+                <td>{processRecord.pid}</td>
+                <td>{processRecord.name}</td>
+                <td>{processRecord.user}</td>
+                <td
+                  className={getUsageClass(
+                    processRecord[valueKey],
+                    thresholds,
+                  )}
+                >
+                  {round(processRecord[valueKey])}%
+                </td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td className="empty-cell" colSpan={4}>
+                No process data available.
               </td>
             </tr>
-          ))}
+          )}
         </tbody>
       </table>
     </div>
@@ -1133,8 +1213,11 @@ function MetricProcessTable({
 function LogsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [error, setError] = useState("");
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [loading, setLoading] = useState(false);
 
   async function loadLogs() {
+    setLoading(true);
     setError("");
 
     try {
@@ -1142,9 +1225,12 @@ function LogsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
 
       if (data) {
         setLogs(data.logs);
+        setLastUpdatedAt(new Date());
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not load logs.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -1156,10 +1242,13 @@ function LogsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
     <section className="panel">
       <div className="panel-heading">
         <h2>Logs</h2>
-        <button className="secondary" onClick={loadLogs}>
-          Refresh
+        <button className="secondary" disabled={loading} onClick={loadLogs}>
+          {loading ? "Refreshing..." : "Refresh"}
         </button>
       </div>
+      <p className="muted">
+        Last updated: {lastUpdatedAt ? formatDateTime(lastUpdatedAt.toISOString()) : "Never"}
+      </p>
 
       <div className="stack">
         {logs.map((log) => (
@@ -1169,6 +1258,10 @@ function LogsPanel({ apiRequest }: { apiRequest: ApiRequest }) {
         ))}
       </div>
 
+      {loading && logs.length === 0 && <p className="description">Loading logs...</p>}
+      {!loading && logs.length === 0 && !error && (
+        <p className="description">No audit logs are available yet.</p>
+      )}
       {error && <p className="error">{error}</p>}
     </section>
   );
@@ -1187,7 +1280,10 @@ function ProcessesPanel({
   const [sortBy, setSortBy] = useState<"cpu" | "memory">("cpu");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [loading, setLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState("");
+  const [selectedProcess, setSelectedProcess] = useState<ProcessRecord | null>(null);
   const canManageProcesses = user.role === "operator" || user.role === "admin";
   const visibleProcesses = [...processes]
     .filter((processRecord) =>
@@ -1200,6 +1296,7 @@ function ProcessesPanel({
     );
 
   async function loadProcesses() {
+    setLoading(true);
     setError("");
     setMessage("");
 
@@ -1213,6 +1310,7 @@ function ProcessesPanel({
 
       if (processData) {
         setProcesses(processData.processes);
+        setLastUpdatedAt(new Date());
       }
 
       if (actionData) {
@@ -1220,11 +1318,26 @@ function ProcessesPanel({
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not load processes.");
+    } finally {
+      setLoading(false);
     }
   }
 
   async function killProcess(processRecord: ProcessRecord) {
-    if (!window.confirm(`Stop ${processRecord.name} (${processRecord.pid})?`)) {
+    const confirmed = window.confirm(
+      [
+        "This will send SIGTERM to a real process on the host.",
+        "",
+        `Name: ${processRecord.name}`,
+        `PID: ${processRecord.pid}`,
+        `User: ${processRecord.user}`,
+        "",
+        "Stopping the wrong process can interrupt applications, jobs, or the dashboard host.",
+        "Continue only if you understand the impact.",
+      ].join("\n"),
+    );
+
+    if (!confirmed) {
       return;
     }
 
@@ -1276,13 +1389,17 @@ function ProcessesPanel({
   }, []);
 
   return (
-    <section className="panel">
+    <>
+      <section className="panel">
       <div className="panel-heading">
         <h2>Process Monitoring</h2>
-        <button className="secondary" onClick={loadProcesses}>
-          Refresh
+        <button className="secondary" disabled={loading} onClick={loadProcesses}>
+          {loading ? "Refreshing..." : "Refresh"}
         </button>
       </div>
+      <p className="muted">
+        Last updated: {lastUpdatedAt ? formatDateTime(lastUpdatedAt.toISOString()) : "Never"}
+      </p>
       <p className="description">
         {canManageProcesses
           ? "Operator actions are available for running processes."
@@ -1344,7 +1461,7 @@ function ProcessesPanel({
               <th>Memory</th>
               <th>User</th>
               <th>Status</th>
-              {canManageProcesses && <th>Action</th>}
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1356,29 +1473,107 @@ function ProcessesPanel({
                 <td>{round(processRecord.memoryUsagePercent)}%</td>
                 <td>{processRecord.user}</td>
                 <td>{processRecord.status}</td>
-                {canManageProcesses && (
-                  <td>
+                <td>
+                  <div className="inline-actions compact-actions">
                     <button
-                      className="danger"
-                      disabled={pendingAction === `kill-${processRecord.pid}`}
-                      onClick={() => void killProcess(processRecord)}
+                      className="secondary"
+                      onClick={() => setSelectedProcess(processRecord)}
                     >
-                      {pendingAction === `kill-${processRecord.pid}` ? "Killing..." : "Kill"}
+                      Details
                     </button>
-                  </td>
-                )}
+                    {canManageProcesses && (
+                      <button
+                        className="danger"
+                        disabled={pendingAction === `kill-${processRecord.pid}`}
+                        onClick={() => void killProcess(processRecord)}
+                      >
+                        {pendingAction === `kill-${processRecord.pid}` ? "Killing..." : "Kill"}
+                      </button>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {visibleProcesses.length === 0 && !error && (
-        <p className="description">No matching processes.</p>
+      {loading && processes.length === 0 && (
+        <p className="description">Loading process list...</p>
+      )}
+      {!loading && processes.length === 0 && !error && (
+        <p className="description">No running processes were returned.</p>
+      )}
+      {!loading && processes.length > 0 && visibleProcesses.length === 0 && !error && (
+        <p className="description">No processes match the current search.</p>
       )}
       {message && <p className="success">{message}</p>}
       {error && <p className="error">{error}</p>}
     </section>
+    {selectedProcess && (
+      <ProcessDetailsModal
+        onClose={() => setSelectedProcess(null)}
+        processRecord={selectedProcess}
+      />
+    )}
+    </>
+  );
+}
+
+function ProcessDetailsModal({
+  onClose,
+  processRecord,
+}: {
+  onClose: () => void;
+  processRecord: ProcessRecord;
+}) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <section
+        aria-modal="true"
+        className="modal-panel"
+        onMouseDown={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Process details</p>
+            <h2>{processRecord.name}</h2>
+          </div>
+          <button className="secondary" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <dl className="detail-list compact-details">
+          <Detail label="PID" value={String(processRecord.pid)} />
+          <Detail label="CPU usage" value={`${round(processRecord.cpuUsagePercent)}%`} />
+          <Detail
+            label="Memory usage"
+            value={`${round(processRecord.memoryUsagePercent)}%`}
+          />
+          <Detail label="User" value={processRecord.user} />
+          <Detail label="Status" value={processRecord.status} />
+          <Detail label="Started" value={formatDateTime(processRecord.startTime)} />
+        </dl>
+
+        <div className="command-block">
+          <strong>Command</strong>
+          <code>{processRecord.command || processRecord.name}</code>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1624,12 +1819,14 @@ function formatBytes(value: number) {
   return `${Math.round(value / 1024 / 1024)} MB`;
 }
 
-function getWebSocketUrl(token: string) {
+function getWebSocketUrl(token: string, intervalMs: RefreshIntervalMs) {
   const baseUrl = apiUrl.toLowerCase().startsWith("https")
     ? apiUrl.replace(/^https/i, "wss")
     : apiUrl.replace(/^http/i, "ws");
 
-  return `${baseUrl}/api/live/metrics?token=${encodeURIComponent(token)}`;
+  return `${baseUrl}/api/live/metrics?token=${encodeURIComponent(
+    token,
+  )}&intervalMs=${intervalMs}`;
 }
 
 function round(value: number) {

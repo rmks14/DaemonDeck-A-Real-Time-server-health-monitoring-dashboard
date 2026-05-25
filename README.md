@@ -8,11 +8,12 @@ DaemonDeck is built as a practical DevOps/SRE dashboard: a React frontend, an Ex
 
 - Monitors CPU, memory, disk, OS details, uptime, and running process count.
 - Streams live CPU, memory, and disk metrics over WebSocket.
+- Supports live pause/resume, manual refresh, last-updated timestamps, and 5s/10s/30s/1m refresh intervals.
 - Shows CPU per-core usage, load average, top CPU processes, and trend charts.
 - Shows total/used/free memory, swap usage, top memory processes, and trend charts.
 - Shows mounted disk partitions with usage and health status.
 - Lists real running processes with PID, name, CPU %, memory %, user, status, and start time.
-- Supports process search, CPU/memory sorting, manual refresh, and permission-gated kill actions.
+- Supports process search, CPU/memory sorting, process detail views, manual refresh, and permission-gated kill actions.
 - Persists users, bcrypt-hashed passwords, alert rules, and audit logs in SQLite.
 - Uses JWT sessions with role-based access control for viewer, operator, and admin users.
 
@@ -40,10 +41,13 @@ DaemonDeck is built as a practical DevOps/SRE dashboard: a React frontend, an Ex
 | Disk monitoring | Done |
 | Process monitoring | Done |
 | WebSocket live metrics | Done |
+| Configurable refresh intervals | Done |
+| Last updated timestamps | Done |
+| Loading, error, and empty states | Done |
+| Process details modal | Done |
 | Metric trend charts | Done |
 | Audit logs | Basic persistent audit logs |
 | Alert rules | Basic persistent rules |
-| Configurable refresh intervals | Not yet |
 | Service monitoring | Not yet |
 | Docker monitoring | Not yet |
 | Multi-server agent architecture | Not yet |
@@ -65,6 +69,29 @@ operator / password123
 ```
 
 The demo passwords are stored as bcrypt hashes in SQLite after the first backend start.
+
+## Demo Walkthrough
+
+1. Sign in with `demo / password123` for admin access.
+2. Open **Overview** to inspect host health, CPU, memory, disk, uptime, OS, kernel, process count, and alert counts.
+3. Open **Metrics** to watch live CPU, memory, and disk charts. Change the refresh interval between `5s`, `10s`, `30s`, and `1m`, or pause live updates.
+4. Open **Processes** to search running processes, sort by CPU or memory usage, view process details, and use operator/admin-only process actions.
+5. Open **Logs** to review persisted audit activity.
+6. Open **Admin** as the demo admin user to manage roles, alert rules, and system actions.
+
+## Screenshots
+
+Recommended screenshots for the project README or resume portfolio:
+
+```txt
+docs/screenshots/login.png        Login screen
+docs/screenshots/overview.png     Server overview dashboard
+docs/screenshots/metrics.png      Live metrics, charts, and refresh interval selector
+docs/screenshots/processes.png    Process table and details modal
+docs/screenshots/admin.png        Admin role and alert controls
+```
+
+Keep screenshots current after UI changes so the README reflects the actual app.
 
 ## Architecture
 
@@ -149,6 +176,7 @@ backend/data/daemondeck.sqlite
 ```
 
 Local database files are ignored by Git.
+
 ## Health Thresholds
 
 Thresholds are centralized in `backend/src/config/thresholds.ts`.
