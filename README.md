@@ -86,36 +86,37 @@ The demo passwords are stored as bcrypt hashes in SQLite after the first backend
 
 ## Screenshots
 
-Recommended screenshots for the project README or resume portfolio:
+Put real PNG screenshots in `docs/screenshots/` with these exact filenames. See `docs/screenshots/README.md` for what each screenshot should show.
 
-```txt
-docs/screenshots/login.png        Login screen
-docs/screenshots/overview.png     Server overview dashboard
-docs/screenshots/metrics.png      Live metrics, charts, and refresh interval selector
-docs/screenshots/processes.png    Process table and details modal
-docs/screenshots/admin.png        Admin role and alert controls
-```
-
-Keep screenshots current after UI changes so the README reflects the actual app.
+| Screen | Screenshot |
+| --- | --- |
+| Login | [docs/screenshots/login.png](docs/screenshots/login.png) |
+| Overview | [docs/screenshots/overview.png](docs/screenshots/overview.png) |
+| Metrics | [docs/screenshots/metrics.png](docs/screenshots/metrics.png) |
+| Processes | [docs/screenshots/processes.png](docs/screenshots/processes.png) |
+| Admin | [docs/screenshots/admin.png](docs/screenshots/admin.png) |
 
 ## Architecture
 
-```txt
-React Dashboard
-  |
-  | REST API + WebSocket
-  v
-Express Backend
-  |
-  | systeminformation
-  v
-Local Host Metrics
+```mermaid
+flowchart LR
+  browser["Browser"]
+  frontend["React dashboard"]
+  proxy["Nginx reverse proxy"]
+  api["Express API"]
+  live["WebSocket metrics stream"]
+  sqlite[("SQLite")]
+  host["Linux host metrics"]
 
-Express Backend
-  |
-  | better-sqlite3
-  v
-SQLite Database
+  browser -->|local dev| frontend
+  browser -->|Docker :8080| proxy
+  proxy --> frontend
+  proxy --> api
+  frontend -->|REST /api| api
+  frontend <-->|/api/live/metrics| live
+  live --> api
+  api -->|better-sqlite3| sqlite
+  api -->|systeminformation| host
 ```
 
 ## Getting Started
