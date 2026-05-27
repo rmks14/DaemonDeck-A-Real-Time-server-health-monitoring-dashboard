@@ -86,8 +86,6 @@ The demo passwords are stored as bcrypt hashes in SQLite after the first backend
 
 ## Screenshots
 
-Put real PNG screenshots in `docs/screenshots/` with these exact filenames. See `docs/screenshots/README.md` for what each screenshot should show.
-
 | Screen | Screenshot |
 | --- | --- |
 | Login | [docs/screenshots/login.png](docs/screenshots/login.png) |
